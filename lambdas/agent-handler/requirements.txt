@@ -1,1 +1,2 @@
-"strands-agents\nboto3" 
+strands-agents
+boto3
