@@ -38,6 +38,49 @@ def _extract_text(message):
     return " ".join(p.strip() for p in parts if p and p.strip()).strip()
 
 
+def _iter_tool_results(messages):
+    """Yield tool-result payloads (dicts) from a Converse-format message list."""
+    for message in messages or []:
+        for block in message.get("content", []) if isinstance(message, dict) else []:
+            if not isinstance(block, dict):
+                continue
+            tool_result = block.get("toolResult")
+            if not tool_result:
+                continue
+            for item in tool_result.get("content", []):
+                if isinstance(item, dict):
+                    if isinstance(item.get("json"), dict):
+                        yield item["json"]
+                    elif isinstance(item.get("text"), str):
+                        try:
+                            import json
+
+                            parsed = json.loads(item["text"])
+                            if isinstance(parsed, dict):
+                                yield parsed
+                        except (ValueError, TypeError):
+                            continue
+
+
+def latest_weather_data(messages):
+    """Return the most recent current-weather dict from tool results, or {}.
+
+    Used to populate the API response's `weather_data` so the frontend WeatherCard
+    can render. Matches get_current_weather output (and the nested weather that
+    activity_advisor returns).
+    """
+    found = {}
+    for payload in _iter_tool_results(messages):
+        if {"temp", "humidity", "description"} <= payload.keys():
+            found = payload
+        elif isinstance(payload.get("weather"), dict) and {
+            "temp",
+            "humidity",
+        } <= payload["weather"].keys():
+            found = payload["weather"]
+    return found
+
+
 def run_agent(text, messages=None):
     """Run one turn against English `text`, returning (response_text, updated_messages).
 
