@@ -1,0 +1,2 @@
+# Dev/test-only dependencies. NOT bundled into the Lambda (see requirements.txt).
+pytest
