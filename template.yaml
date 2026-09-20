@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-09
+Description: >
+  Weather Buddy - voice-first multilingual weather assistant.
+  agent-handler (POST /query) + tts-handler (Polly, invoked internally).
+
+Parameters:
+  OwmApiKey:
+    Type: String
+    NoEcho: true
+    Description: OpenWeatherMap API key (One Call API 3.0).
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-3-haiku-20240307-v1:0
+    Description: Bedrock model id used by the agent.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    MemorySize: 256
+    Timeout: 30
+  Api:
+    Cors:
+      AllowOrigin: "'*'"
+      AllowHeaders: "'Content-Type'"
+      AllowMethods: "'POST,OPTIONS'"
+
+Resources:
+  TtsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: lambdas/tts-handler/
+      Handler: handler.handler
+      Description: Synthesizes speech with Amazon Polly; invoked by the agent.
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: polly:SynthesizeSpeech
+              Resource: "*"
+
+  AgentFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: lambdas/agent-handler/
+      Handler: handler.handler
+      Description: Runs the Strands weather agent behind POST /query.
+      Environment:
+        Variables:
+          OWM_API_KEY: !Ref OwmApiKey
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          TTS_LAMBDA_NAME: !Ref TtsFunction
+      Policies:
+        - Statement:
+            # Converse (InvokeModel) + ConverseStream (InvokeModelWithResponseStream,
+            # required because the agent runs in streaming mode by default).
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource:
+                - !Sub "arn:aws:bedrock:*::foundation-model/*"
+                - !Sub "arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*"
+            - Effect: Allow
+              Action: translate:TranslateText
+              Resource: "*"
+            - Effect: Allow
+              Action: comprehend:DetectDominantLanguage
+              Resource: "*"
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !GetAtt TtsFunction.Arn
+      Events:
+        Query:
+          Type: Api
+          Properties:
+            Path: /query
+            Method: post
+
+Outputs:
+  ApiUrl:
+    Description: Invoke URL for POST /query.
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/query"
+  AgentFunctionName:
+    Value: !Ref AgentFunction
+  TtsFunctionName:
+    Value: !Ref TtsFunction
