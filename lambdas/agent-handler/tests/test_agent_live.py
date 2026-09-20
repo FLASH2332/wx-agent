@@ -6,7 +6,6 @@ Run with:  RUN_LIVE_AGENT=1 pytest -m live
 
 import importlib
 import os
-from pathlib import Path
 
 import pytest
 
@@ -18,24 +17,12 @@ pytestmark = [
     ),
 ]
 
-_ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
-
-
-def _load_root_env():
-    if not _ENV_PATH.exists():
-        pytest.skip(f"no .env at {_ENV_PATH}")
-    for line in _ENV_PATH.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            os.environ[key.strip()] = value.strip()
-    os.environ.setdefault("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
-    os.environ.setdefault("AWS_REGION", "us-east-1")
-
 
 @pytest.fixture(scope="module")
 def agent_mod():
-    _load_root_env()
+    # .env is loaded by conftest; require a real OWM key (not the offline dummy).
+    if os.environ.get("OWM_API_KEY", "test-key") == "test-key":
+        pytest.skip("OWM_API_KEY not set in .env")
     import agent
 
     return importlib.reload(agent)
