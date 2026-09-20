@@ -2,7 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+/* Display face for the hero temperature — a grotesk with characterful figures,
+   clearly distinct from Inter which carries the data/body text. */
+.font-hero {
+  font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  font-feature-settings: 'tnum' 1;
+}
 
 :root {
   --background: #0f172a;
