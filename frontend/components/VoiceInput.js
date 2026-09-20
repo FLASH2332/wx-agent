@@ -98,24 +98,31 @@ export default function VoiceInput({ onTranscript, appState }) {
     }
   };
 
-  // Determine mic button styles based on state
   const isProcessing = appState === 'processing';
-  const showRings = isListening;
 
   return (
     <div className="w-full flex flex-col items-center mt-4 mb-2 pb-4">
-      {/* Transcribing text display */}
-      <div className="h-6 mb-2 text-center">
-        {isTranscribing && <span className="text-white/70 italic text-sm">Transcribing...</span>}
+      {/* Transcribing indicator */}
+      <div className="h-5 mb-2 text-center">
+        {isTranscribing && (
+          <span className="text-white/50 italic text-xs font-medium tracking-wide animate-pulse">
+            Transcribing…
+          </span>
+        )}
       </div>
 
-      <div className="relative flex justify-center items-center w-full max-w-2xl group">
+      <div className="relative flex justify-center items-center w-full max-w-2xl">
         
-        {/* Unified Chat Bar */}
+        {/* Chat bar — outer radius 20px */}
         <form 
           onSubmit={handleTextSubmit} 
-          className={`flex w-full items-center bg-slate-900 border transition-all duration-300 rounded-2xl shadow-lg pl-6 pr-2 py-2
-            ${isListening ? 'border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.2)]' : 'border-slate-700/80 hover:border-slate-600 focus-within:border-blue-500/60'}
+          className={`flex w-full items-center bg-slate-900/90 
+            transition-[border-color,box-shadow] duration-200
+            rounded-[20px] pl-5 pr-2 py-2
+            shadow-[0_2px_6px_rgba(0,0,0,0.2),0_8px_24px_rgba(0,0,0,0.15)]
+            ${isListening 
+              ? 'border border-red-500/40 shadow-[0_0_0_3px_rgba(239,68,68,0.12),0_2px_6px_rgba(0,0,0,0.2)]' 
+              : 'border border-slate-700/60 hover:border-slate-600/80 focus-within:border-blue-500/40 focus-within:shadow-[0_0_0_3px_rgba(59,130,246,0.12),0_2px_6px_rgba(0,0,0,0.2)]'}
           `}
         >
           <input 
@@ -123,39 +130,47 @@ export default function VoiceInput({ onTranscript, appState }) {
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
             disabled={isProcessing || isListening}
-            placeholder={isSupported ? "Ask Weather Buddy..." : "Type your query..."}
-            className="w-full bg-transparent text-white text-lg outline-none placeholder:text-slate-500 disabled:opacity-50"
+            placeholder={isSupported ? "Ask Weather Buddy…" : "Type your query…"}
+            className="w-full bg-transparent text-white text-base outline-none 
+              placeholder:text-slate-500/80 disabled:opacity-40
+              transition-opacity duration-150"
           />
           
-          <div className="flex items-center space-x-1 pl-2">
+          <div className="flex items-center gap-1 pl-2">
+            {/* Send — hit area ≥44px */}
             <button 
               type="submit" 
               disabled={!textInput.trim() || isProcessing || isListening}
-              className="p-3 text-slate-400 hover:text-white disabled:opacity-30 transition-colors"
+              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center
+                text-slate-400 hover:text-white disabled:opacity-20 
+                transition-[color,opacity] duration-150 press-scale"
               aria-label="Send message"
             >
-              <Send className="w-5 h-5" />
+              <Send className="w-[18px] h-[18px]" strokeWidth={1.5} />
             </button>
             
-            {/* The main mic button integrated inside the bar */}
+            {/* Mic — inner radius 12px (outer 20px - padding 8px) */}
             {isSupported && (
               <button
                 type="button"
                 onClick={toggleListen}
                 disabled={isProcessing}
-                className={`relative z-10 w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300
-                  ${isProcessing ? 'bg-slate-800 text-slate-400 cursor-not-allowed' : 
-                    isListening ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)] scale-105' : 
-                    'bg-blue-600 hover:bg-blue-500 text-white hover:scale-105'}
+                className={`relative z-10 w-11 h-11 rounded-[12px] flex items-center justify-center
+                  transition-[background-color,transform,box-shadow] duration-200 press-scale
+                  ${isProcessing 
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
+                    : isListening 
+                      ? 'bg-red-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.4)]' 
+                      : 'bg-blue-600 hover:bg-blue-500 text-white'}
                 `}
                 aria-label={isListening ? "Stop listening" : "Start voice input"}
               >
                 {isProcessing || isTranscribing ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <div className="w-[18px] h-[18px] border-2 border-white/25 border-t-white rounded-full animate-spin"></div>
                 ) : isListening ? (
-                  <Square className="w-5 h-5 fill-current" />
+                  <Square className="w-[18px] h-[18px] fill-current" strokeWidth={1.5} />
                 ) : (
-                  <Mic className="w-5 h-5" />
+                  <Mic className="w-[18px] h-[18px]" strokeWidth={1.5} />
                 )}
               </button>
             )}
