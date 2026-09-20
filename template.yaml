@@ -56,6 +56,9 @@ Resources:
       Description: Runs the Strands weather agent behind POST /query.
       # Self-hosted inference is slower than Bedrock; give multi-tool queries headroom.
       Timeout: 60
+      # The dependency set (litellm/strands) is large; more memory also means more
+      # CPU, which speeds up the heavy cold-start imports.
+      MemorySize: 512
       Environment:
         Variables:
           OWM_API_KEY: !Ref OwmApiKey
@@ -63,6 +66,9 @@ Resources:
           LLM_BASE_URL: !Ref LlmBaseUrl
           LLM_API_KEY: !Ref LlmApiKey
           TTS_LAMBDA_NAME: !Ref TtsFunction
+          # Only /tmp is writable on Lambda; point HOME there in case any library
+          # (e.g. litellm) tries to write a cache/config at import time.
+          HOME: /tmp
       Policies:
         - Statement:
             - Effect: Allow
