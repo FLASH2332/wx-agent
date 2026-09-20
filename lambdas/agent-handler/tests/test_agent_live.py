@@ -1,6 +1,7 @@
-"""Live agent tests: real Bedrock + real OWM. Skipped by default.
+"""Live agent tests: real LLM endpoint + real OWM. Skipped by default.
 
-Requires an active OWM key, AWS creds, and Bedrock Haiku model access.
+Requires an active OWM key and a reachable LLM endpoint (LLM_MODEL_ID /
+LLM_BASE_URL / LLM_API_KEY) in the repo-root .env.
 Run with:  RUN_LIVE_AGENT=1 pytest -m live
 """
 
@@ -16,21 +17,6 @@ pytestmark = [
         reason="set RUN_LIVE_AGENT=1 to run tests that call Bedrock + OWM",
     ),
 ]
-
-_ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
-
-
-def _load_root_env():
-    if not _ENV_PATH.exists():
-        pytest.skip(f"no .env at {_ENV_PATH}")
-    for line in _ENV_PATH.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            os.environ[key.strip()] = value.strip()
-    os.environ.setdefault("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
-    os.environ.setdefault("AWS_REGION", "us-east-2")
-
 
 @pytest.fixture(scope="module")
 def agent_mod():

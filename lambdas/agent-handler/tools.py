@@ -9,6 +9,7 @@ are available rather than calling a paid API.
 """
 
 import json
+import logging
 import os
 import urllib.parse
 import urllib.request
@@ -16,6 +17,8 @@ from collections import defaultdict
 from functools import lru_cache
 
 from strands import tool
+
+logger = logging.getLogger(__name__)
 
 OWM_API_KEY = os.environ["OWM_API_KEY"]
 
@@ -44,7 +47,10 @@ def _http_get_json_cached(url: str, qs: str):
 
 
 def _http_get_json(url, params):
-    """Wrapper that serializes dict params for the lru_cache."""
+    """Log the call (without the API key), then serialize params for the lru_cache."""
+    # Log each OWM call so multi-city queries are visible.
+    location = params.get("q") or f"{params.get('lat')},{params.get('lon')}"
+    logger.info("OWM request: %s (%s)", url.rsplit("/", 1)[-1], location)
     qs = urllib.parse.urlencode(params)
     return _http_get_json_cached(url, qs)
 
