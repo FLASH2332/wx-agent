@@ -107,23 +107,48 @@ def test_get_forecast_respects_days_limit(monkeypatch):
     assert len(tools.get_forecast("Delhi", days=1)["days"]) == 1
 
 
-def test_get_alerts_reports_none_on_free_tier(monkeypatch):
-    calls = []
+def _geo_country(country, name="Delhi"):
+    """Stub _http_get_json so geocoding resolves to a given country."""
 
     def fake_http(url, params):
-        calls.append(url)
         if url == tools.GEO_URL:
-            return [{"name": "Delhi", "country": "IN", "lat": 28.6, "lon": 77.2}]
-        raise AssertionError("get_alerts must not call a weather endpoint")
+            return [{"name": name, "country": country, "lat": 28.6, "lon": 77.2}]
+        raise AssertionError("get_alerts should not call other OWM endpoints")
 
-    monkeypatch.setattr(tools, "_http_get_json", fake_http)
+    return fake_http
+
+
+def test_get_alerts_us_uses_nws(monkeypatch):
+    monkeypatch.setattr(tools, "_http_get_json", _geo_country("US", name="Miami"))
+    monkeypatch.setattr(
+        tools, "_fetch_gdacs_alerts",
+        lambda lat, lon: (_ for _ in ()).throw(AssertionError("US must not use GDACS")),
+    )
+    monkeypatch.setattr(
+        tools, "_fetch_nws_alerts",
+        lambda lat, lon: [{"event": "Hurricane Warning", "severity": "Extreme"}],
+    )
+
+    result = tools.get_alerts("Miami")
+
+    assert result["alerts"][0]["event"] == "Hurricane Warning"
+    assert "National Weather Service" in result["note"]
+
+
+def test_get_alerts_non_us_uses_gdacs_and_reports_none(monkeypatch):
+    monkeypatch.setattr(tools, "_http_get_json", _geo_country("IN"))
+    monkeypatch.setattr(
+        tools, "_fetch_nws_alerts",
+        lambda lat, lon: (_ for _ in ()).throw(AssertionError("non-US must not use NWS")),
+    )
+    monkeypatch.setattr(tools, "_fetch_gdacs_alerts", lambda lat, lon: [])
 
     result = tools.get_alerts("Delhi")
 
     assert result["location"] == "Delhi, IN"
     assert result["alerts"] == []
-    assert "free tier" in result["note"]
-    assert calls == [tools.GEO_URL]  # only geocoding, no paid alerts call
+    assert "No active alerts" in result["note"]
+    assert "GDACS" in result["note"]
 
 
 def test_get_alerts_unknown_location_raises(monkeypatch):

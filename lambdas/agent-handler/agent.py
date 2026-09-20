@@ -89,6 +89,19 @@ def latest_weather_data(messages):
     return found
 
 
+def latest_forecast_data(messages):
+    """Return the most recent forecast dict from tool results, or {}.
+    
+    Used to populate the API response's `forecast_data` so the frontend can 
+    render the 5-day forecast and hourly timeline without parsing chat messages.
+    """
+    found = {}
+    for payload in _iter_tool_results(messages):
+        if "days" in payload.keys():
+            found = payload
+    return found
+
+
 def run_agent(text, messages=None):
     """Run one turn against English `text`, returning (response_text, updated_messages).
 
