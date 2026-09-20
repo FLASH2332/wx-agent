@@ -82,6 +82,14 @@ body {
   animation: fade-in-up 0.35s var(--ease-out-expo) both;
 }
 
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s var(--ease-out-expo) both;
+}
+
 /* Stagger utility: each child gets +100ms delay */
 .stagger-children > * {
   animation: fade-in-up 0.35s var(--ease-out-expo) both;
