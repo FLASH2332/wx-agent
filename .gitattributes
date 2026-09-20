@@ -1,0 +1,6 @@
+# Keep build/deploy files LF so `make` and shell scripts work on all platforms.
+Makefile text eol=lf
+*.mk text eol=lf
+*.sh text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
