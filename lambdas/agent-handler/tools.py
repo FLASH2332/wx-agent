@@ -1,21 +1,26 @@
 """Weather tools for the Strands agent.
 
-All tools resolve a location to lat/lon via the OWM geocoding endpoint
-(AGENTS.md rule 14), then read weather from the One Call 3.0 endpoint.
-Tools only call OWM or do pure computation — never Bedrock (rule 11).
+All tools resolve a location to lat/lon via the OWM geocoding endpoint, then read
+weather from the free-tier v2.5 endpoints (/weather for current, /forecast for the
+5-day/3-hour forecast). Tools only call OWM or do pure computation — never Bedrock.
+
+Note: the free tier has no weather-alerts endpoint, so get_alerts reports that none
+are available rather than calling a paid API.
 """
 
 import json
 import os
 import urllib.parse
 import urllib.request
+from collections import defaultdict
 
 from strands import tool
 
 OWM_API_KEY = os.environ["OWM_API_KEY"]
 
 GEO_URL = "https://api.openweathermap.org/geo/1.0/direct"
-ONECALL_URL = "https://api.openweathermap.org/data/3.0/onecall"
+CURRENT_URL = "https://api.openweathermap.org/data/2.5/weather"
+FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
 
 _HTTP_TIMEOUT = 8
 
@@ -46,37 +51,26 @@ def _geocode(location):
     return top["lat"], top["lon"], display
 
 
-def _onecall(lat, lon, units, exclude):
-    """Fetch the One Call 3.0 payload for a coordinate."""
-    return _http_get_json(
-        ONECALL_URL,
-        {
-            "lat": lat,
-            "lon": lon,
-            "units": units,
-            "exclude": ",".join(exclude),
-            "appid": OWM_API_KEY,
-        },
-    )
-
-
 def _current_weather_data(location, units="metric"):
     """Return normalized current-weather data for a location (shared internal helper).
 
-    Used by the get_current_weather tool and by activity_advisor (rule 12), so the
-    latter never has to invoke another tool through the agent.
+    Used by the get_current_weather tool and by activity_advisor, so the latter
+    never has to invoke another tool through the agent.
     """
     lat, lon, display = _geocode(location)
-    payload = _onecall(lat, lon, units, exclude=["minutely", "hourly", "daily"])
-    current = payload.get("current", {})
-    weather = (current.get("weather") or [{}])[0]
+    payload = _http_get_json(
+        CURRENT_URL, {"lat": lat, "lon": lon, "units": units, "appid": OWM_API_KEY}
+    )
+    main = payload.get("main", {})
+    wind = payload.get("wind", {})
+    weather = (payload.get("weather") or [{}])[0]
     return {
         "location": display,
         "units": units,
-        "temp": current.get("temp"),
-        "feels_like": current.get("feels_like"),
-        "humidity": current.get("humidity"),
-        "wind_speed": current.get("wind_speed"),
+        "temp": main.get("temp"),
+        "feels_like": main.get("feels_like"),
+        "humidity": main.get("humidity"),
+        "wind_speed": wind.get("speed"),
         "description": weather.get("description"),
         "icon": weather.get("icon"),
     }
@@ -88,52 +82,63 @@ def get_current_weather(location: str, units: str = "metric") -> dict:
     return _current_weather_data(location, units)
 
 
+def _summarize_forecast_days(entries, max_days):
+    """Aggregate 3-hour forecast entries into per-day summaries (high/low/conditions)."""
+    by_date = defaultdict(list)
+    for entry in entries:
+        date = (entry.get("dt_txt") or "")[:10]
+        if date:
+            by_date[date].append(entry)
+
+    days = []
+    for date in sorted(by_date)[:max_days]:
+        items = by_date[date]
+        temps_min = [i["main"]["temp_min"] for i in items if "main" in i]
+        temps_max = [i["main"]["temp_max"] for i in items if "main" in i]
+        # Representative conditions: the entry nearest midday, else the first.
+        midday = min(
+            items, key=lambda i: abs(int((i.get("dt_txt") or "0 12")[11:13] or 12) - 12)
+        )
+        weather = (midday.get("weather") or [{}])[0]
+        days.append(
+            {
+                "date": date,
+                "temp_min": min(temps_min) if temps_min else None,
+                "temp_max": max(temps_max) if temps_max else None,
+                "description": weather.get("description"),
+                "icon": weather.get("icon"),
+                "pop": max((i.get("pop", 0) for i in items), default=0),
+            }
+        )
+    return days
+
+
 @tool
 def get_forecast(location: str, days: int = 3, units: str = "metric") -> dict:
     """Get a multi-day daily weather forecast (high/low, conditions) for a location."""
     lat, lon, display = _geocode(location)
-    payload = _onecall(
-        lat, lon, units, exclude=["current", "minutely", "hourly", "alerts"]
+    payload = _http_get_json(
+        FORECAST_URL, {"lat": lat, "lon": lon, "units": units, "appid": OWM_API_KEY}
     )
-    daily = payload.get("daily") or []
-    days = max(1, min(int(days), len(daily))) if daily else 0
-    forecast = []
-    for entry in daily[:days]:
-        temp = entry.get("temp") or {}
-        weather = (entry.get("weather") or [{}])[0]
-        forecast.append(
-            {
-                "dt": entry.get("dt"),
-                "temp_min": temp.get("min"),
-                "temp_max": temp.get("max"),
-                "humidity": entry.get("humidity"),
-                "description": weather.get("description"),
-                "icon": weather.get("icon"),
-                "pop": entry.get("pop"),
-            }
-        )
-    return {"location": display, "units": units, "days": forecast}
+    max_days = max(1, int(days))
+    return {
+        "location": display,
+        "units": units,
+        "days": _summarize_forecast_days(payload.get("list") or [], max_days),
+    }
 
 
 @tool
 def get_alerts(location: str) -> dict:
     """Get any active government-issued weather alerts or warnings for a location."""
-    lat, lon, display = _geocode(location)
-    payload = _onecall(
-        lat, lon, "metric", exclude=["current", "minutely", "hourly", "daily"]
-    )
-    alerts = []
-    for alert in payload.get("alerts") or []:
-        alerts.append(
-            {
-                "event": alert.get("event"),
-                "sender": alert.get("sender_name"),
-                "start": alert.get("start"),
-                "end": alert.get("end"),
-                "description": alert.get("description"),
-            }
-        )
-    return {"location": display, "alerts": alerts}
+    # Validate the location (and get a clean display name), but note that the OWM
+    # free tier exposes no alerts endpoint, so there is never alert data to return.
+    _, _, display = _geocode(location)
+    return {
+        "location": display,
+        "alerts": [],
+        "note": "Weather alerts are not available on the OpenWeatherMap free tier.",
+    }
 
 
 def _advise(activity, weather):
