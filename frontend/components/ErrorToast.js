@@ -14,9 +14,9 @@ export default function ErrorToast({ message, onDismiss }) {
   if (!message) return null;
 
   return (
-    <div 
-      role="alert" 
-      className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm
+    <div
+      role="alert"
+      className="fixed top-5 left-1/2 -translate-x-1/2 z-[60] w-11/12 max-w-md
         animate-fade-in-up"
     >
       <div className="bg-red-950/50 border border-red-500/20 text-red-100 

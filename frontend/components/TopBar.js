@@ -38,14 +38,11 @@ export default function TopBar({ currentLang, onLangChange, onLocationSearch }) 
   };
 
   return (
-    <header className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 w-full
-      bg-white/[0.03] border border-white/[0.06] px-5 py-3.5 rounded-[22px]
-      shadow-[0_1px_3px_rgba(0,0,0,0.12),0_4px_16px_rgba(0,0,0,0.08)]
-      transition-interactive">
-      <div className="flex items-center gap-2">
-        <h1 className="text-xl lg:text-2xl font-semibold tracking-tight text-white/90">
-          {greeting}!
-          <span className="text-base lg:text-lg font-normal text-white/45 ml-2">
+    <header className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 w-full">
+      <div className="flex items-center gap-2 self-start md:self-auto">
+        <h1 className="text-xl lg:text-2xl font-semibold tracking-tight text-white">
+          {greeting}
+          <span className="text-base lg:text-lg font-normal text-white/50 ml-2">
             {getTranslation(currentLang, 'weatherBuddy')}
           </span>
         </h1>

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { MessageCircle } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import TopBar from '@/components/TopBar';
 import VoiceInput from '@/components/VoiceInput';
@@ -12,6 +13,7 @@ import AudioPlayer from '@/components/AudioPlayer';
 import ErrorToast from '@/components/ErrorToast';
 import SuggestionChips from '@/components/SuggestionChips';
 import { queryAgent, fetchInstantWeather } from '@/lib/api';
+import { skyFor } from '@/lib/skyTheme';
 
 export default function Home() {
   const [appState, setAppState] = useState('idle');
@@ -24,13 +26,14 @@ export default function Home() {
   const [messages, setMessages] = useState([]);
   const [latestResponse, setLatestResponse] = useState("");
   const [latestAudio, setLatestAudio] = useState("");
-  
+
   // Explicit language state (overrides auto-detection for subsequent turns)
   const [selectedLang, setSelectedLang] = useState("en");
-  
+
   const [errorMsg, setErrorMsg] = useState("");
   const endOfChatRef = useRef(null);
 
+  // Keep the conversation panel scrolled to the latest message.
   useEffect(() => {
     endOfChatRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, appState]);
@@ -104,7 +107,7 @@ export default function Home() {
       setLatestResponse("");
       setLatestAudio("");
     }
-    
+
     setAppState('processing');
     setErrorMsg("");
     
@@ -172,79 +175,91 @@ export default function Home() {
     }
   };
 
+  const dock = (
+    <div className="max-w-3xl mx-auto w-full px-4 pt-3 pb-4">
+      <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} appState={appState} currentLang={selectedLang} />
+    </div>
+  );
+
+  // Persistent conversation panel — lives in the right rail, fills the space,
+  // and is where the assistant's replies and audio appear.
+  const conversationPanel = (
+    <div className="flex-1 min-h-[240px] lg:min-h-0 flex flex-col overflow-hidden
+      rounded-[24px] bg-white/[0.06] border border-white/10 backdrop-blur-md">
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/10 shrink-0">
+        <MessageCircle className="w-4 h-4 text-white/60" strokeWidth={1.75} />
+        <h3 className="text-sm font-medium text-white/70">Weather Buddy</h3>
+      </div>
+      <div className="flex-1 overflow-y-auto hide-scrollbar p-4 flex flex-col">
+        {messages.length === 0 && appState !== 'processing' ? (
+          <p className="m-auto text-center text-white/40 text-sm px-2 leading-relaxed">
+            Ask about any place or forecast — by voice or text.<br />
+            Your conversation appears here.
+          </p>
+        ) : (
+          <>
+            <ChatHistory messages={messages} currentLang={selectedLang} />
+            {appState === 'processing' && (
+              <div className="flex justify-start my-1.5">
+                <div className="bg-white/[0.06] text-white/60 px-3.5 py-2 rounded-2xl rounded-bl-md
+                  text-sm flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-white/70 rounded-full animate-ping" />
+                  Weather Buddy is thinking…
+                </div>
+              </div>
+            )}
+            {latestAudio && (
+              <div className="mt-2">
+                <AudioPlayer audioBase64={latestAudio} autoPlay={true} />
+              </div>
+            )}
+            <div ref={endOfChatRef} className="h-1" />
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <AppShell appState={appState}>
-      <AlertBanner alerts={alerts} />
-      
-      <TopBar 
-        currentLang={selectedLang} 
-        onLangChange={handleLangChange} 
-        onLocationSearch={handleManualLocation} 
+    <AppShell
+      sky={skyFor(weatherData)}
+      banner={alerts.length > 0 ? <AlertBanner alerts={alerts} /> : null}
+      footer={dock}
+    >
+      <TopBar
+        currentLang={selectedLang}
+        onLangChange={setSelectedLang}
+        onLocationSearch={handleManualLocation}
       />
 
       {/* DASHBOARD - MULTI-COLUMN LAYOUT */}
-      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 flex-1 pb-56">
-        
+      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 lg:items-stretch">
+
         {/* LEFT COLUMN: Main Weather */}
-        <div className="flex-1 flex flex-col gap-5">
+        <div className="flex-1 flex flex-col gap-5 min-w-0">
           {appState === 'processing' && !weatherData && <SkeletonCard />}
-          
+
           {weatherData && (
             <>
               <WeatherCard weatherData={weatherData} currentLang={selectedLang} />
               <HourlyTimeline hours={forecastHourly} currentLang={selectedLang} />
             </>
           )}
-          
+
           {appState === 'idle' && !weatherData && (
-            <div className="flex flex-col items-center justify-center h-64 
-              border border-dashed border-white/[0.08] rounded-[28px] 
-              bg-white/[0.02] p-6">
+            <div className="flex flex-col items-center justify-center min-h-[16rem]
+              border border-dashed border-white/[0.08] rounded-[28px]
+              bg-white/[0.02] p-8">
               <p className="text-white/35 font-medium mb-4 text-sm">Ask Weather Buddy for a forecast…</p>
               <SuggestionChips onSelect={(text) => handleQuery(text, false)} />
             </div>
           )}
         </div>
 
-        {/* RIGHT COLUMN: Sidebar */}
-        <div className="w-full lg:w-80 flex flex-col gap-5">
+        {/* RIGHT COLUMN: forecast on top, live conversation filling the rest. */}
+        <div className="w-full lg:w-96 shrink-0 flex flex-col gap-5">
           {weatherData && <ForecastList days={forecastDays} currentLang={selectedLang} />}
-        </div>
-      </div>
-
-      {/* FIXED BOTTOM DOCK */}
-      <div className="fixed bottom-0 left-0 w-full 
-        bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent 
-        pt-10 pb-6 px-4 z-40 pointer-events-none">
-        <div className="max-w-4xl mx-auto w-full flex flex-col items-center pointer-events-auto relative">
-          
-          {/* Chat log — outer 24px */}
-          {(messages.length > 0 || appState === 'processing') && (
-            <div className="w-full max-w-2xl bg-slate-900/90 backdrop-blur-xl 
-              border border-slate-700/50 rounded-[24px] p-4 mb-4 
-              shadow-[0_4px_16px_rgba(0,0,0,0.3),0_12px_40px_rgba(0,0,0,0.2)]
-              max-h-48 flex flex-col">
-              <div className="overflow-y-auto hide-scrollbar flex-1 pr-2">
-                <ChatHistory messages={messages} currentLang={selectedLang} />
-                {appState === 'processing' && (
-                  <div className="flex justify-start my-2">
-                    <div className="bg-white/[0.06] text-white/60 px-4 py-2.5 
-                      rounded-[16px] rounded-tl-[4px] border border-white/[0.06] 
-                      text-sm animate-pulse flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 bg-blue-400/80 rounded-full animate-ping" />
-                      <span>Weather Buddy is thinking…</span>
-                    </div>
-                  </div>
-                )}
-                <div ref={endOfChatRef} className="h-2" />
-              </div>
-            </div>
-          )}
-          
-          <div className="flex flex-col items-center w-full max-w-2xl relative z-50">
-            <AudioPlayer audioBase64={latestAudio} autoPlay={true} />
-            <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} appState={appState} currentLang={selectedLang} />
-          </div>
+          {conversationPanel}
         </div>
       </div>
 

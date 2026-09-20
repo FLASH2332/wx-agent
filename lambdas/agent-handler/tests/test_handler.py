@@ -1,4 +1,4 @@
-"""Offline tests for the /query handler. All AWS seams are stubbed."""
+"""Offline tests for the /query handler (Groq-native: no Comprehend/Translate)."""
 
 import io
 import json
@@ -7,24 +7,9 @@ import handler
 from tools import LocationNotFoundError
 
 
-class _FakeComprehend:
-    def __init__(self, lang):
-        self.lang = lang
-
-    def detect_dominant_language(self, Text):  # noqa: N803 - boto3 kwarg name
-        return {"Languages": [{"LanguageCode": self.lang}]}
-
-
-class _RecordingTranslate:
-    def __init__(self):
-        self.calls = []
-
-    def translate_text(self, Text, SourceLanguageCode, TargetLanguageCode):  # noqa: N803
-        self.calls.append((Text, SourceLanguageCode, TargetLanguageCode))
-        return {"TranslatedText": f"[{TargetLanguageCode}]{Text}"}
-
-
 class _FakeLambda:
+    """Stubs the tts-handler invoke, returning a fixed audio_b64."""
+
     def __init__(self, audio_b64="QUJD"):
         self.audio_b64 = audio_b64
         self.last_payload = None
@@ -39,56 +24,44 @@ def _event(text, lang="en", messages=None):
     return {"body": json.dumps({"text": text, "lang": lang, "messages": messages or []})}
 
 
-def test_english_flow_skips_translation(monkeypatch):
-    translate = _RecordingTranslate()
+def test_query_success(monkeypatch):
     fake_lambda = _FakeLambda()
-    monkeypatch.setattr(handler, "comprehend", _FakeComprehend("en"))
-    monkeypatch.setattr(handler, "translate", translate)
     monkeypatch.setattr(handler, "lambda_client", fake_lambda)
-    monkeypatch.setattr(handler, "run_agent", lambda t, m: ("Sunny in Delhi.", m))
+    monkeypatch.setattr(
+        handler, "run_agent",
+        lambda text, messages, user_lang="en", context_location=None: (
+            "Sunny in Delhi.", messages
+        ),
+    )
 
-    result = handler.handler(_event("What's the weather in Delhi?"))
+    result = handler.handler(_event("What's the weather in Delhi?", lang="en"))
     body = json.loads(result["body"])
 
     assert result["statusCode"] == 200
     assert result["headers"]["Access-Control-Allow-Origin"] == "*"
     assert body["response_text"] == "Sunny in Delhi."
     assert body["lang"] == "en"
-    assert translate.calls == []  # no translation for English
-    assert fake_lambda.last_payload == {"text": "Sunny in Delhi.", "lang": "en"}
     assert body["audio_b64"] == "QUJD"
+    assert "weather_data" in body and "forecast_data" in body
+    assert fake_lambda.last_payload == {"text": "Sunny in Delhi.", "lang": "en"}
 
 
-def test_hindi_flow_translates_both_ways(monkeypatch):
-    translate = _RecordingTranslate()
-    fake_lambda = _FakeLambda()
-    monkeypatch.setattr(handler, "comprehend", _FakeComprehend("hi"))
-    monkeypatch.setattr(handler, "translate", translate)
-    monkeypatch.setattr(handler, "lambda_client", fake_lambda)
-
+def test_lang_passed_through_to_agent(monkeypatch):
+    monkeypatch.setattr(handler, "lambda_client", _FakeLambda())
     captured = {}
 
-    def fake_run_agent(text, messages):
-        captured["english_in"] = text
-        return "It is sunny.", messages
+    def fake_run_agent(text, messages, user_lang="en", context_location=None):
+        captured["user_lang"] = user_lang
+        return "namaste", messages
 
     monkeypatch.setattr(handler, "run_agent", fake_run_agent)
 
-    result = handler.handler(_event("mausam", lang="hi"))
-    body = json.loads(result["body"])
-
-    assert result["statusCode"] == 200
+    body = json.loads(handler.handler(_event("mausam", lang="hi"))["body"])
+    assert captured["user_lang"] == "hi"
     assert body["lang"] == "hi"
-    # transcript translated to English before the agent
-    assert captured["english_in"] == "[en]mausam"
-    # response translated back to Hindi before TTS
-    assert body["response_text"] == "[hi]It is sunny."
-    assert fake_lambda.last_payload["lang"] == "hi"
-    assert [c[1:] for c in translate.calls] == [("hi", "en"), ("en", "hi")]
 
 
-def test_missing_text_returns_400(monkeypatch):
-    monkeypatch.setattr(handler, "comprehend", _FakeComprehend("en"))
+def test_missing_text_returns_400():
     result = handler.handler(_event(""))
     assert result["statusCode"] == 400
     assert "error" in json.loads(result["body"])
@@ -100,9 +73,7 @@ def test_invalid_json_returns_400():
 
 
 def test_location_not_found_returns_400(monkeypatch):
-    monkeypatch.setattr(handler, "comprehend", _FakeComprehend("en"))
-
-    def boom(text, messages):
+    def boom(text, messages, user_lang="en", context_location=None):
         raise LocationNotFoundError("Nowhere")
 
     monkeypatch.setattr(handler, "run_agent", boom)
@@ -112,10 +83,7 @@ def test_location_not_found_returns_400(monkeypatch):
 
 
 def test_weather_data_extracted_from_tool_results(monkeypatch):
-    monkeypatch.setattr(handler, "comprehend", _FakeComprehend("en"))
-    monkeypatch.setattr(handler, "translate", _RecordingTranslate())
     monkeypatch.setattr(handler, "lambda_client", _FakeLambda())
-
     messages_with_tool = [
         {
             "role": "user",
@@ -133,9 +101,18 @@ def test_weather_data_extracted_from_tool_results(monkeypatch):
         }
     ]
     monkeypatch.setattr(
-        handler, "run_agent", lambda t, m: ("Clear in Delhi.", messages_with_tool)
+        handler, "run_agent",
+        lambda text, messages, user_lang="en", context_location=None: (
+            "Clear in Delhi.", messages_with_tool
+        ),
     )
 
     body = json.loads(handler.handler(_event("weather in Delhi"))["body"])
     assert body["weather_data"]["temp"] == 29
     assert body["weather_data"]["description"] == "clear sky"
+
+
+def test_transcribe_missing_audio_returns_400():
+    result = handler.handler({"path": "/transcribe", "body": json.dumps({})})
+    assert result["statusCode"] == 400
+    assert "audio" in json.loads(result["body"])["error"].lower()
