@@ -172,9 +172,9 @@ export default function Home() {
             <>
               {/* Giant Weather Card on Desktop */}
               <div className="lg:transform lg:scale-105 lg:origin-top-left transition-transform duration-500">
-                <WeatherCard weatherData={weatherData} />
+                <WeatherCard weatherData={weatherData} currentLang={selectedLang} />
               </div>
-              <HourlyTimeline hours={forecastHourly} />
+              <HourlyTimeline hours={forecastHourly} currentLang={selectedLang} />
             </>
           )}
           
@@ -188,7 +188,7 @@ export default function Home() {
 
         {/* RIGHT COLUMN: Sidebar (Forecast & Details) */}
         <div className="w-full lg:w-80 flex flex-col gap-6">
-          {weatherData && <ForecastList days={forecastDays} />}
+          {weatherData && <ForecastList days={forecastDays} currentLang={selectedLang} />}
         </div>
       </div>
 

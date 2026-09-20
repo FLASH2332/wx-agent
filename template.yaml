@@ -86,6 +86,11 @@ Resources:
           Properties:
             Path: /query
             Method: post
+        Transcribe:
+          Type: Api
+          Properties:
+            Path: /transcribe
+            Method: post
 
 Outputs:
   ApiUrl:

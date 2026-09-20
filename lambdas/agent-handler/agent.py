@@ -131,7 +131,7 @@ def run_agent(text, messages=None, user_lang="en", context_location=None):
     returned history includes the new user turn and assistant turn(s).
     """
     prompt = SYSTEM_PROMPT
-    prompt += f"\n\nIMPORTANT INSTRUCTION: You must ALWAYS respond in the language corresponding to the ISO-639-1 code '{user_lang}'."
+    prompt += f"\n\nIMPORTANT INSTRUCTION: You must ALWAYS respond in the language corresponding to the ISO-639-1 code '{user_lang}'. When calling tools, you MUST pass the parameter lang='{user_lang}' so the data is translated natively."
     if context_location:
         prompt += f"\n\nContext: The user is currently viewing the dashboard for {context_location}. If they ask a question without specifying a location, assume they mean {context_location}."
         

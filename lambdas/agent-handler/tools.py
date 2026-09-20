@@ -69,7 +69,7 @@ def _geocode(location):
     return top["lat"], top["lon"], display, country
 
 
-def _current_weather_data(location, units="metric"):
+def _current_weather_data(location, units="metric", lang="en"):
     """Return normalized current-weather data for a location (shared internal helper).
 
     Used by the get_current_weather tool and by activity_advisor, so the latter
@@ -77,7 +77,7 @@ def _current_weather_data(location, units="metric"):
     """
     lat, lon, display, _ = _geocode(location)
     payload = _http_get_json(
-        CURRENT_URL, {"lat": lat, "lon": lon, "units": units, "appid": OWM_API_KEY}
+        CURRENT_URL, {"lat": lat, "lon": lon, "units": units, "lang": lang, "appid": OWM_API_KEY}
     )
     main = payload.get("main", {})
     wind = payload.get("wind", {})
@@ -95,9 +95,9 @@ def _current_weather_data(location, units="metric"):
 
 
 @tool
-def get_current_weather(location: str, units: str = "metric") -> dict:
+def get_current_weather(location: str, units: str = "metric", lang: str = "en") -> dict:
     """Get the current temperature, humidity, wind, and sky conditions for a location."""
-    return _current_weather_data(location, units)
+    return _current_weather_data(location, units, lang)
 
 
 def _summarize_forecast_days(entries, max_days):
@@ -146,11 +146,11 @@ def _extract_hourly(entries, count=8):
 
 
 @tool
-def get_forecast(location: str, days: int = 3, units: str = "metric") -> dict:
+def get_forecast(location: str, days: int = 3, units: str = "metric", lang: str = "en") -> dict:
     """Get a multi-day daily weather forecast (high/low, conditions) for a location."""
     lat, lon, display, _ = _geocode(location)
     payload = _http_get_json(
-        FORECAST_URL, {"lat": lat, "lon": lon, "units": units, "appid": OWM_API_KEY}
+        FORECAST_URL, {"lat": lat, "lon": lon, "units": units, "lang": lang, "appid": OWM_API_KEY}
     )
     max_days = max(1, int(days))
     return {
@@ -267,9 +267,9 @@ def _advise(activity, weather):
 
 
 @tool
-def activity_advisor(location: str, activity: str) -> dict:
+def activity_advisor(location: str, activity: str, lang: str = "en") -> dict:
     """Advise whether current weather at a location suits a given outdoor activity."""
-    weather = _current_weather_data(location)
+    weather = _current_weather_data(location, lang=lang)
     return {
         "location": weather["location"],
         "activity": activity,

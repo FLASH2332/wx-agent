@@ -1,17 +1,15 @@
 """agent-handler Lambda: the POST /query entrypoint.
 
 Flow per request:
-  1. Detect the dominant language with Amazon Comprehend.
-  2. If non-English, translate the transcript to English with Amazon Translate.
-  3. Run the Strands agent on English text; it returns an English answer.
-  4. If non-English, translate the answer back to the user's language.
-  5. Synthesize speech by invoking tts-handler via boto3 (never HTTP).
-  6. Return response_text, audio_b64, weather_data, lang, and updated messages.
+  1. Extract the detected language from the request body.
+  2. Run the Strands agent natively in that language (using Groq Llama 3).
+  3. Synthesize speech by invoking tts-handler via boto3 (never HTTP).
+  4. Return response_text, audio_b64, weather_data, lang, and updated messages.
 """
 
 import json
 import os
-
+import urllib.request
 import boto3
 
 from agent import latest_weather_data, latest_forecast_data, run_agent
@@ -21,8 +19,6 @@ AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 TTS_LAMBDA_NAME = os.environ["TTS_LAMBDA_NAME"]
 
 # AWS clients initialised at module level (avoids re-init on warm invocations).
-comprehend = boto3.client("comprehend", region_name=AWS_REGION)
-translate = boto3.client("translate", region_name=AWS_REGION)
 lambda_client = boto3.client("lambda", region_name=AWS_REGION)
 
 CORS_HEADERS = {
@@ -46,23 +42,7 @@ def _parse_body(event):
     return json.loads(body)
 
 
-def _detect_language(text, fallback="en"):
-    """Return the dominant 2-letter language code (Comprehend), or a fallback."""
-    try:
-        result = comprehend.detect_dominant_language(Text=text)
-        languages = result.get("Languages") or []
-        if languages:
-            return languages[0]["LanguageCode"]
-    except Exception:  # noqa: BLE001 - detection is best-effort
-        pass
-    return fallback
 
-
-def _translate(text, source, target):
-    result = translate.translate_text(
-        Text=text, SourceLanguageCode=source, TargetLanguageCode=target
-    )
-    return result["TranslatedText"]
 
 
 def _synthesize(text, lang):
@@ -77,6 +57,60 @@ def _synthesize(text, lang):
 
 
 def handler(event, context=None):
+    path = event.get("path", "")
+    
+    # ---------------------------------------------------------
+    # Route: /transcribe
+    # ---------------------------------------------------------
+    if path.endswith("/transcribe"):
+        try:
+            body = _parse_body(event)
+            audio_b64 = body.get("audio_b64")
+            if not audio_b64:
+                return _response(400, {"error": "Missing audio_b64"})
+                
+            import base64
+            from email.message import Message
+            
+            # Setup multipart form data for Groq Whisper
+            boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+            body_bytes = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="file"; filename="audio.webm"\r\n'
+                f"Content-Type: audio/webm\r\n\r\n"
+            ).encode("utf-8")
+            body_bytes += base64.b64decode(audio_b64)
+            body_bytes += f"\r\n--{boundary}\r\n".encode("utf-8")
+            body_bytes += (
+                f'Content-Disposition: form-data; name="model"\r\n\r\n'
+                f"whisper-large-v3\r\n"
+                f"--{boundary}--\r\n"
+            ).encode("utf-8")
+            
+            req = urllib.request.Request(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                data=body_bytes,
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('GROQ_API_KEY')}",
+                    "Content-Type": f"multipart/form-data; boundary={boundary}",
+                    "User-Agent": "WeatherBuddy/1.0",
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+                
+            # Fallback to language routing if supported by whisper response or just return text
+            return _response(200, {
+                "text": resp_data.get("text", ""),
+                "language": resp_data.get("language", "en")
+            })
+        except Exception as e:
+            return _response(500, {"error": str(e)})
+
+    # ---------------------------------------------------------
+    # Route: /query (or default)
+    # ---------------------------------------------------------
     try:
         body = _parse_body(event)
     except (ValueError, TypeError):
@@ -86,23 +120,11 @@ def handler(event, context=None):
     if not text:
         return _response(400, {"error": "Missing 'text' in request"})
     messages = body.get("messages") or []
-    fallback_lang = body.get("lang") or "en"
+    user_lang = body.get("lang") or "en"
+    context_location = body.get("contextLocation")
 
     try:
-        user_lang = _detect_language(text, fallback=fallback_lang)
-
-        # Let the user's manual dropdown explicitly override comprehension 
-        # so subsequent turns are generated and synthesized correctly
-        if fallback_lang and fallback_lang != "en" and fallback_lang != user_lang:
-            user_lang = fallback_lang
-
-        english_text = text if user_lang == "en" else _translate(text, user_lang, "en")
-        response_en, updated_messages = run_agent(english_text, messages)
-        final_text = (
-            response_en
-            if user_lang == "en"
-            else _translate(response_en, "en", user_lang)
-        )
+        final_text, updated_messages = run_agent(text, messages, user_lang=user_lang, context_location=context_location)
 
         audio_b64 = _synthesize(final_text, user_lang)
         weather_data = latest_weather_data(updated_messages)
