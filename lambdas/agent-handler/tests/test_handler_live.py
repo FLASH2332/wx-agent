@@ -1,11 +1,12 @@
 """Live end-to-end integration test for the /query handler.
 
 Exercises the real backend chain together: Amazon Comprehend (language detect),
-Amazon Translate (both ways for non-English), the Strands agent (Groq provider),
+Amazon Translate (both ways for non-English), the Strands agent (LiteLLM endpoint),
 and Amazon Polly (via the real tts-handler code). Skipped by default.
 
-Requires: AWS creds (Comprehend/Translate/Polly), an active OWM key, and Groq set
-in the repo-root .env (MODEL_PROVIDER=groq, GROQ_API_KEY). Run with:
+Requires: AWS creds (Comprehend/Translate/Polly), an active OWM key, and a
+reachable LLM endpoint (LLM_MODEL_ID/LLM_BASE_URL/LLM_API_KEY) in the repo-root
+.env. Run with:
     RUN_LIVE_HANDLER=1 pytest -m live -s
 """
 
@@ -42,11 +43,11 @@ def _load_tts_module():
 
 @pytest.fixture(scope="module")
 def handler_mod():
-    # .env is loaded by conftest; require Groq + a real OWM key for this test.
-    if os.environ.get("MODEL_PROVIDER", "").lower() != "groq":
-        pytest.skip("set MODEL_PROVIDER=groq in .env to run the live handler test")
+    # .env is loaded by conftest; require a real OWM key and a real LLM endpoint.
     if os.environ.get("OWM_API_KEY", "test-key") == "test-key":
         pytest.skip("OWM_API_KEY not set in .env")
+    if "localhost" in os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1"):
+        pytest.skip("LLM_BASE_URL not set to a real endpoint in .env")
 
     import agent
 
