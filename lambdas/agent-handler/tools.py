@@ -13,6 +13,7 @@ import os
 import urllib.parse
 import urllib.request
 from collections import defaultdict
+from functools import lru_cache
 
 from strands import tool
 
@@ -29,16 +30,27 @@ class LocationNotFoundError(Exception):
     """Raised when the OWM geocoding endpoint returns no match for a location."""
 
 
+@lru_cache(maxsize=128)
+def _http_get_json_cached(url: str, qs: str):
+    """Cached internal helper for HTTP requests."""
+    full_url = f"{url}?{qs}"
+    try:
+        req = urllib.request.Request(full_url, headers={"User-Agent": "WeatherBuddy/1.0"})
+        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        print(f"HTTP GET failed for {full_url}: {e}")
+        return {}
+
+
 def _http_get_json(url, params):
-    """Perform a GET request and parse the JSON body."""
-    query = urllib.parse.urlencode(params)
-    request = urllib.request.Request(f"{url}?{query}", method="GET")
-    with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:
-        return json.loads(response.read().decode("utf-8"))
+    """Wrapper that serializes dict params for the lru_cache."""
+    qs = urllib.parse.urlencode(params)
+    return _http_get_json_cached(url, qs)
 
 
 def _geocode(location):
-    """Resolve a location name to (lat, lon, resolved_name) via the OWM geo endpoint."""
+    """Resolve a location name to (lat, lon, resolved_name, country) via the OWM geo endpoint."""
     results = _http_get_json(
         GEO_URL, {"q": location, "limit": 1, "appid": OWM_API_KEY}
     )
@@ -48,7 +60,7 @@ def _geocode(location):
     name = top.get("name", location)
     country = top.get("country")
     display = f"{name}, {country}" if country else name
-    return top["lat"], top["lon"], display
+    return top["lat"], top["lon"], display, country
 
 
 def _current_weather_data(location, units="metric"):
@@ -57,7 +69,7 @@ def _current_weather_data(location, units="metric"):
     Used by the get_current_weather tool and by activity_advisor, so the latter
     never has to invoke another tool through the agent.
     """
-    lat, lon, display = _geocode(location)
+    lat, lon, display, _ = _geocode(location)
     payload = _http_get_json(
         CURRENT_URL, {"lat": lat, "lon": lon, "units": units, "appid": OWM_API_KEY}
     )
@@ -113,10 +125,24 @@ def _summarize_forecast_days(entries, max_days):
     return days
 
 
+def _extract_hourly(entries, count=8):
+    """Extract the next 24 hours (8 3-hour slots) of raw forecast data."""
+    hourly = []
+    for entry in entries[:count]:
+        weather = (entry.get("weather") or [{}])[0]
+        hourly.append({
+            "dt_txt": entry.get("dt_txt"),
+            "temp": entry.get("main", {}).get("temp"),
+            "description": weather.get("description"),
+            "icon": weather.get("icon")
+        })
+    return hourly
+
+
 @tool
 def get_forecast(location: str, days: int = 3, units: str = "metric") -> dict:
     """Get a multi-day daily weather forecast (high/low, conditions) for a location."""
-    lat, lon, display = _geocode(location)
+    lat, lon, display, _ = _geocode(location)
     payload = _http_get_json(
         FORECAST_URL, {"lat": lat, "lon": lon, "units": units, "appid": OWM_API_KEY}
     )
@@ -124,20 +150,83 @@ def get_forecast(location: str, days: int = 3, units: str = "metric") -> dict:
     return {
         "location": display,
         "units": units,
+        "hourly": _extract_hourly(payload.get("list") or []),
         "days": _summarize_forecast_days(payload.get("list") or [], max_days),
     }
+
+
+def _fetch_nws_alerts(lat, lon):
+    try:
+        req = urllib.request.Request(
+            f"https://api.weather.gov/alerts/active?point={lat},{lon}",
+            headers={"User-Agent": "WeatherBuddy/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        
+        alerts = []
+        for feature in data.get("features", []):
+            props = feature.get("properties", {})
+            alerts.append({
+                "event": props.get("event"),
+                "headline": props.get("headline"),
+                "description": props.get("description"),
+                "severity": props.get("severity")
+            })
+        return alerts
+    except Exception as e:
+        print(f"NWS Error: {e}")
+        return []
+
+
+def _fetch_gdacs_alerts(lat, lon):
+    try:
+        req = urllib.request.Request("https://www.gdacs.org/xml/rss.xml")
+        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as response:
+            xml_data = response.read()
+        
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(xml_data)
+        alerts = []
+        for item in root.findall(".//item"):
+            geo_lat = item.find(".//{http://www.w3.org/2003/01/geo/wgs84_pos#}lat")
+            geo_lon = item.find(".//{http://www.w3.org/2003/01/geo/wgs84_pos#}long")
+            
+            if geo_lat is not None and geo_lon is not None:
+                item_lat = float(geo_lat.text)
+                item_lon = float(geo_lon.text)
+                
+                # Check rough distance (within ~5 degrees lat/lon)
+                if abs(lat - item_lat) < 5 and abs(lon - item_lon) < 5:
+                    title = item.find("title")
+                    desc = item.find("description")
+                    alerts.append({
+                        "event": title.text if title is not None else "Global Alert",
+                        "description": desc.text if desc is not None else "",
+                        "source": "GDACS"
+                    })
+        return alerts
+    except Exception as e:
+        print(f"GDACS Error: {e}")
+        return []
 
 
 @tool
 def get_alerts(location: str) -> dict:
     """Get any active government-issued weather alerts or warnings for a location."""
-    # Validate the location (and get a clean display name), but note that the OWM
-    # free tier exposes no alerts endpoint, so there is never alert data to return.
-    _, _, display = _geocode(location)
+    lat, lon, display, country = _geocode(location)
+    
+    if country == "US":
+        alerts = _fetch_nws_alerts(lat, lon)
+        source = "National Weather Service (US)"
+    else:
+        alerts = _fetch_gdacs_alerts(lat, lon)
+        source = "Global Disaster Alert and Coordination System (GDACS)"
+        
     return {
         "location": display,
-        "alerts": [],
-        "note": "Weather alerts are not available on the OpenWeatherMap free tier.",
+        "alerts": alerts,
+        "note": f"Alerts fetched from {source}" if alerts else f"No active alerts from {source}."
     }
 
 
