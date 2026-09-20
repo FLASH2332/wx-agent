@@ -9,16 +9,14 @@ Parameters:
     Type: String
     NoEcho: true
     Description: OpenWeatherMap API key (free tier, v2.5 endpoints).
-  LlmModelId:
-    Type: String
-    Description: LiteLLM model id, e.g. "openai/qwen2.5:7b-instruct".
-  LlmBaseUrl:
-    Type: String
-    Description: OpenAI-compatible LLM endpoint, e.g. "http://<elastic-ip>:11434/v1".
-  LlmApiKey:
+  GroqApiKey:
     Type: String
     NoEcho: true
-    Description: API key for the LLM endpoint (use "ollama" for local Ollama).
+    Description: Groq API key (OpenAI-compatible endpoint).
+  GroqModelId:
+    Type: String
+    Default: llama-3.1-8b-instant
+    Description: Groq model id — tool-capable, non-reasoning (e.g. llama-3.1-8b-instant).
 
 Globals:
   Function:
@@ -54,29 +52,24 @@ Resources:
       CodeUri: lambdas/agent-handler/
       Handler: handler.handler
       Description: Runs the Strands weather agent behind POST /query.
-      # Self-hosted inference is slower than Bedrock; give multi-tool queries headroom.
+      # Headroom for the tool loop + translate + TTS (API Gateway still caps at 29s).
       Timeout: 60
-      # The dependency set (litellm/strands) is large; more memory also means more
-      # CPU, which speeds up the heavy cold-start imports.
+      # More memory also means more CPU, which speeds up cold-start imports.
       MemorySize: 512
       Environment:
         Variables:
           OWM_API_KEY: !Ref OwmApiKey
-          LLM_MODEL_ID: !Ref LlmModelId
-          LLM_BASE_URL: !Ref LlmBaseUrl
-          LLM_API_KEY: !Ref LlmApiKey
+          MODEL_PROVIDER: groq
+          GROQ_API_KEY: !Ref GroqApiKey
+          GROQ_MODEL_ID: !Ref GroqModelId
           TTS_LAMBDA_NAME: !Ref TtsFunction
-          # Only /tmp is writable on Lambda; point HOME there in case any library
-          # (e.g. litellm) tries to write a cache/config at import time.
+          # Only /tmp is writable on Lambda; point HOME there in case a library
+          # tries to write a cache/config at import time.
           HOME: /tmp
       Policies:
+        # Multilingual + STT are handled by Groq (external HTTPS), so no Comprehend
+        # or Translate permissions are needed — only invoking the TTS Lambda.
         - Statement:
-            - Effect: Allow
-              Action: translate:TranslateText
-              Resource: "*"
-            - Effect: Allow
-              Action: comprehend:DetectDominantLanguage
-              Resource: "*"
             - Effect: Allow
               Action: lambda:InvokeFunction
               Resource: !GetAtt TtsFunction.Arn
