@@ -39,6 +39,10 @@ def _parse_body(event):
         return event if isinstance(event, dict) else {}
     if isinstance(body, (dict, list)):
         return body
+    # Lambda Function URL sets isBase64Encoded=True when the body is b64-encoded.
+    if event.get("isBase64Encoded") and isinstance(body, str):
+        import base64
+        body = base64.b64decode(body).decode("utf-8")
     return json.loads(body)
 
 
@@ -57,7 +61,8 @@ def _synthesize(text, lang):
 
 
 def handler(event, context=None):
-    path = event.get("path", "")
+    # rawPath is set by Lambda Function URL; path is set by API Gateway REST.
+    path = event.get("rawPath") or event.get("path", "")
     
     # ---------------------------------------------------------
     # Route: /transcribe
