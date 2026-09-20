@@ -6,7 +6,6 @@ Run explicitly with:  RUN_LIVE_OWM=1 pytest -m live
 
 import importlib
 import os
-from pathlib import Path
 
 import pytest
 
@@ -18,24 +17,12 @@ pytestmark = [
     ),
 ]
 
-_ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
-
-
-def _load_root_env():
-    if not _ENV_PATH.exists():
-        pytest.skip(f"no .env at {_ENV_PATH}")
-    for line in _ENV_PATH.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            os.environ[key.strip()] = value.strip()
-    if not os.environ.get("OWM_API_KEY"):
-        pytest.skip("OWM_API_KEY not set in .env")
-
 
 @pytest.fixture(scope="module")
 def tools_live():
-    _load_root_env()
+    # .env is loaded by conftest; require a real key (not the offline dummy).
+    if os.environ.get("OWM_API_KEY", "test-key") == "test-key":
+        pytest.skip("OWM_API_KEY not set in .env")
     import tools
 
     return importlib.reload(tools)

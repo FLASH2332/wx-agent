@@ -26,23 +26,11 @@ pytestmark = [
     ),
 ]
 
-_HANDLER_DIR = Path(__file__).resolve().parents[1]
-_ENV_PATH = _HANDLER_DIR.parents[1] / ".env"
-_TTS_HANDLER_PATH = _HANDLER_DIR.parent / "tts-handler" / "handler.py"
-
-
-def _load_root_env():
-    if not _ENV_PATH.exists():
-        pytest.skip(f"no .env at {_ENV_PATH}")
-    for line in _ENV_PATH.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            os.environ[key.strip()] = value.strip()
-    os.environ.setdefault("AWS_REGION", "us-east-1")
-    # handler reads this at import; no Lambda is deployed locally, so use a
-    # placeholder and route TTS through the real tts-handler code below.
-    os.environ.setdefault("TTS_LAMBDA_NAME", "local-tts")
+# Locate the sibling tts-handler module so we can run real Polly locally instead
+# of invoking a deployed Lambda (this is a module import, not env loading).
+_TTS_HANDLER_PATH = (
+    Path(__file__).resolve().parents[2] / "tts-handler" / "handler.py"
+)
 
 
 def _load_tts_module():
@@ -54,9 +42,11 @@ def _load_tts_module():
 
 @pytest.fixture(scope="module")
 def handler_mod():
-    _load_root_env()
+    # .env is loaded by conftest; require Groq + a real OWM key for this test.
     if os.environ.get("MODEL_PROVIDER", "").lower() != "groq":
         pytest.skip("set MODEL_PROVIDER=groq in .env to run the live handler test")
+    if os.environ.get("OWM_API_KEY", "test-key") == "test-key":
+        pytest.skip("OWM_API_KEY not set in .env")
 
     import agent
 
