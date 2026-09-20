@@ -18,7 +18,6 @@ pytestmark = [
     ),
 ]
 
-
 @pytest.fixture(scope="module")
 def agent_mod():
     # .env is loaded by conftest; require a real OWM key (not the offline dummy).
