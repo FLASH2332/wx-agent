@@ -18,12 +18,36 @@ from tools import (
     get_forecast,
 )
 
-BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+# Provider is Bedrock by default (the pinned production path). Set MODEL_PROVIDER=groq
+# to run the same agent/tools against Groq's OpenAI-compatible API for local testing.
+MODEL_PROVIDER = os.environ.get("MODEL_PROVIDER", "bedrock").lower()
 
 TOOLS = [get_current_weather, get_forecast, get_alerts, activity_advisor]
 
-MODEL = BedrockModel(region_name=AWS_REGION, model_id=BEDROCK_MODEL_ID)
+
+def _build_model():
+    """Construct the LLM model object for the configured provider.
+
+    Only this object differs between providers; the agent loop and tools are
+    identical either way.
+    """
+    if MODEL_PROVIDER == "groq":
+        from strands.models.openai import OpenAIModel
+
+        return OpenAIModel(
+            client_args={
+                "api_key": os.environ["GROQ_API_KEY"],
+                "base_url": "https://api.groq.com/openai/v1",
+            },
+            model_id=os.environ.get("GROQ_MODEL_ID", "llama-3.3-70b-versatile"),
+        )
+    return BedrockModel(
+        region_name=AWS_REGION, model_id=os.environ["BEDROCK_MODEL_ID"]
+    )
+
+
+MODEL = _build_model()
 
 
 def _extract_text(message):
