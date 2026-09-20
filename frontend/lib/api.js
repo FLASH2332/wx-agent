@@ -1,7 +1,7 @@
 // lib/api.js
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-export async function queryAgent(text, lang = "en", messages = [], contextLocation = null) {
+export async function queryAgent(payload) {
   if (!API_URL) {
     throw new Error("NEXT_PUBLIC_API_URL environment variable is not set.");
   }
@@ -11,7 +11,7 @@ export async function queryAgent(text, lang = "en", messages = [], contextLocati
     res = await fetch(`${API_URL}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, lang, messages, contextLocation }),
+      body: JSON.stringify(payload),
     });
   } catch (e) {
     throw new Error(`Backend connection refused! Please ensure you have run 'sam local start-api -p 3001' in a separate terminal to start your AWS backend.`);

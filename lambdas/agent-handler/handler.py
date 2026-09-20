@@ -141,9 +141,12 @@ def handler(event, context=None):
     messages = body.get("messages") or []
     user_lang = body.get("lang") or "en"
     context_location = body.get("contextLocation")
+    user_lat = body.get("userLat")
+    user_lon = body.get("userLon")
+    local_time = body.get("localTime")
 
     try:
-        final_text, updated_messages = run_agent(text, messages, user_lang=user_lang, context_location=context_location)
+        final_text, updated_messages = run_agent(text, messages, user_lang=user_lang, context_location=context_location, user_lat=user_lat, user_lon=user_lon, local_time=local_time)
 
         audio_b64 = _synthesize(final_text, user_lang)
         weather_data = latest_weather_data(updated_messages)

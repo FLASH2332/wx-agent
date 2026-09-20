@@ -12,11 +12,14 @@ import ChatHistory from '@/components/ChatHistory';
 import AudioPlayer from '@/components/AudioPlayer';
 import ErrorToast from '@/components/ErrorToast';
 import SuggestionChips from '@/components/SuggestionChips';
+import ComparisonCard from '@/components/ComparisonCard';
+import ActivityChips from '@/components/ActivityChips';
 import { queryAgent, fetchInstantWeather } from '@/lib/api';
 import { skyFor } from '@/lib/skyTheme';
 
 export default function Home() {
   const [appState, setAppState] = useState('idle');
+  const [userCoords, setUserCoords] = useState(null);
   
   const [weatherData, setWeatherData] = useState(null);
   const [forecastDays, setForecastDays] = useState([]);
@@ -26,6 +29,9 @@ export default function Home() {
   const [messages, setMessages] = useState([]);
   const [latestResponse, setLatestResponse] = useState("");
   const [latestAudio, setLatestAudio] = useState("");
+  
+  const [uiMode, setUiMode] = useState("dashboard");
+  const [comparisonData, setComparisonData] = useState(null);
 
   // Explicit language state (overrides auto-detection for subsequent turns)
   const [selectedLang, setSelectedLang] = useState("en");
@@ -46,6 +52,7 @@ export default function Home() {
           try {
             setAppState('processing');
             const { latitude, longitude } = position.coords;
+            setUserCoords({ lat: latitude, lon: longitude });
             // Need to import fetchInstantWeatherByCoords in the file!
             const { fetchInstantWeatherByCoords } = await import('@/lib/api');
             const data = await fetchInstantWeatherByCoords(latitude, longitude);
@@ -56,10 +63,10 @@ export default function Home() {
               setForecastHourly(data.forecast_data.hourly || []);
             }
             if (data.alerts) setAlerts(data.alerts);
-            
-            setAppState('result');
-          } catch (e) {
-            console.error("Geolocation fetch failed:", e);
+            setAppState('idle');
+            setUiMode('dashboard');
+          } catch (err) {
+            console.error("Location init error:", err);
             setAppState('idle');
           }
         },
@@ -114,13 +121,30 @@ export default function Home() {
     try {
       // Pass existing messages to backend (Strands agent(text) appends the user turn automatically)
       const contextLocation = weatherData?.location || null;
-      const response = await queryAgent(text, activeLang, currentMessages, contextLocation);
+      
+      const localTime = new Date().toISOString();
+      const payload = {
+        text,
+        lang: activeLang,
+        messages: currentMessages,
+        contextLocation,
+        userLat: userCoords?.lat || null,
+        userLon: userCoords?.lon || null,
+        localTime
+      };
+      
+      const response = await queryAgent(payload);
       
       setMessages(response.messages || [...currentMessages, userMsg]);
       
       if (!isSilentLocationUpdate) {
         setLatestResponse(response.response_text || "");
         setLatestAudio(response.audio_b64 || "");
+        setUiMode(response.ui_mode || "chat");
+        setComparisonData(response.comparison_data || null);
+        if (response.lang) {
+          setSelectedLang(response.lang);
+        }
       }
       
       let newLocation = response.weather_data?.location || response.forecast_data?.location;
@@ -234,31 +258,39 @@ export default function Home() {
 
       {/* DASHBOARD - MULTI-COLUMN LAYOUT */}
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 lg:items-stretch">
+        
+        {/* LEFT COLUMN: Main Weather or Comparison (Hidden in 'chat' mode) */}
+        {uiMode !== 'chat' && (
+          <div className="flex-1 flex flex-col gap-5 min-w-0">
+            {appState === 'processing' && !weatherData && <SkeletonCard />}
 
-        {/* LEFT COLUMN: Main Weather */}
-        <div className="flex-1 flex flex-col gap-5 min-w-0">
-          {appState === 'processing' && !weatherData && <SkeletonCard />}
+            {/* Activity Pills Above Comparison Cards */}
+            <ActivityChips onSelect={(text) => handleQuery(text, false)} />
 
-          {weatherData && (
-            <>
-              <WeatherCard weatherData={weatherData} currentLang={selectedLang} />
-              <HourlyTimeline hours={forecastHourly} currentLang={selectedLang} />
-            </>
-          )}
+            {uiMode === 'comparison' && comparisonData ? (
+              <ComparisonCard data={comparisonData} />
+            ) : (
+              weatherData && (
+                <>
+                  <WeatherCard weatherData={weatherData} currentLang={selectedLang} />
+                  <HourlyTimeline hours={forecastHourly} currentLang={selectedLang} />
+                  <ForecastList days={forecastDays} currentLang={selectedLang} />
+                </>
+              )
+            )}
 
-          {appState === 'idle' && !weatherData && (
-            <div className="flex flex-col items-center justify-center min-h-[16rem]
-              border border-dashed border-white/[0.08] rounded-[28px]
-              bg-white/[0.02] p-8">
-              <p className="text-white/35 font-medium mb-4 text-sm">Ask Weather Buddy for a forecast…</p>
-              <SuggestionChips onSelect={(text) => handleQuery(text, false)} />
-            </div>
-          )}
-        </div>
+            {appState === 'idle' && !weatherData && (
+              <div className="flex flex-col items-center justify-center min-h-[16rem]
+                border border-dashed border-white/[0.08] rounded-[28px]
+                bg-white/[0.02] p-8">
+                <p className="text-white/35 font-medium mb-4 text-sm">Waiting for location...</p>
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* RIGHT COLUMN: forecast on top, live conversation filling the rest. */}
-        <div className="w-full lg:w-96 shrink-0 flex flex-col gap-5">
-          {weatherData && <ForecastList days={forecastDays} currentLang={selectedLang} />}
+        {/* RIGHT COLUMN: Live conversation */}
+        <div className={`${uiMode === 'chat' ? 'w-full max-w-2xl mx-auto' : 'w-full lg:w-96 shrink-0'} flex flex-col gap-5 transition-all duration-300 lg:sticky lg:top-2 lg:h-[calc(100vh-8rem)]`}>
           {conversationPanel}
         </div>
       </div>

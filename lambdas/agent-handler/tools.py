@@ -10,6 +10,7 @@ are available rather than calling a paid API.
 
 import json
 import logging
+import math
 import os
 import urllib.parse
 import urllib.request
@@ -55,34 +56,55 @@ def _http_get_json(url, params):
     return _http_get_json_cached(url, qs)
 
 
-def _geocode(location):
-    """Resolve a location name to (lat, lon, resolved_name, country) via the OWM geo endpoint."""
+def _haversine(lat1, lon1, lat2, lon2):
+    R = 6371  # Earth radius in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
+
+def _geocode(location, user_lat=None, user_lon=None):
+    """Resolve a location name to (lat, lon, resolved_name, country, disambiguation_note) via OWM geo endpoint."""
     results = _http_get_json(
-        GEO_URL, {"q": location, "limit": 1, "appid": OWM_API_KEY}
+        GEO_URL, {"q": location, "limit": 5, "appid": OWM_API_KEY}
     )
     if not results:
         raise LocationNotFoundError(location)
-    top = results[0]
+        
+    disambiguation = None
+    if user_lat is not None and user_lon is not None and len(results) > 1:
+        # Sort by distance to user
+        results.sort(key=lambda x: _haversine(user_lat, user_lon, x.get("lat"), x.get("lon")))
+        top = results[0]
+        dist = _haversine(user_lat, user_lon, top.get("lat"), top.get("lon"))
+        display = f"{top.get('name')}, {top.get('state') + ', ' if top.get('state') else ''}{top.get('country')}"
+        disambiguation = f"Resolved '{location}' to {display} because it is {dist:.1f}km from your location."
+    else:
+        top = results[0]
+        
     name = top.get("name", location)
     country = top.get("country")
-    display = f"{name}, {country}" if country else name
-    return top["lat"], top["lon"], display, country
+    state = top.get("state")
+    display = f"{name}, {state}, {country}" if state else f"{name}, {country}" if country else name
+    
+    return top["lat"], top["lon"], display, country, disambiguation
 
 
-def _current_weather_data(location, units="metric", lang="en"):
+def _current_weather_data(location, units="metric", lang="en", user_lat=None, user_lon=None):
     """Return normalized current-weather data for a location (shared internal helper).
 
     Used by the get_current_weather tool and by activity_advisor, so the latter
     never has to invoke another tool through the agent.
     """
-    lat, lon, display, _ = _geocode(location)
+    lat, lon, display, _, note = _geocode(location, user_lat, user_lon)
     payload = _http_get_json(
         CURRENT_URL, {"lat": lat, "lon": lon, "units": units, "lang": lang, "appid": OWM_API_KEY}
     )
     main = payload.get("main", {})
     wind = payload.get("wind", {})
     weather = (payload.get("weather") or [{}])[0]
-    return {
+    ret = {
         "location": display,
         "units": units,
         "temp": main.get("temp"),
@@ -92,12 +114,9 @@ def _current_weather_data(location, units="metric", lang="en"):
         "description": weather.get("description"),
         "icon": weather.get("icon"),
     }
-
-
-@tool
-def get_current_weather(location: str, units: str = "metric", lang: str = "en") -> dict:
-    """Get the current temperature, humidity, wind, and sky conditions for a location."""
-    return _current_weather_data(location, units, lang)
+    if note:
+        ret["disambiguation_note"] = note
+    return ret
 
 
 def _summarize_forecast_days(entries, max_days):
@@ -145,24 +164,21 @@ def _extract_hourly(entries, count=8):
     return hourly
 
 
-def _forecast_data(location, days=5, units="metric", lang="en"):
-    lat, lon, display, _ = _geocode(location)
+def _forecast_data(location, days=5, units="metric", lang="en", user_lat=None, user_lon=None):
+    lat, lon, display, _, note = _geocode(location, user_lat, user_lon)
     payload = _http_get_json(
         FORECAST_URL, {"lat": lat, "lon": lon, "units": units, "lang": lang, "appid": OWM_API_KEY}
     )
     max_days = max(1, int(days))
-    return {
+    ret = {
         "location": display,
         "units": units,
         "hourly": _extract_hourly(payload.get("list") or []),
         "days": _summarize_forecast_days(payload.get("list") or [], max_days),
     }
-
-
-@tool
-def get_forecast(location: str, days: int = 3, units: str = "metric", lang: str = "en") -> dict:
-    """Get a multi-day daily weather forecast (high/low, conditions) for a location."""
-    return _forecast_data(location, days, units, lang)
+    if note:
+        ret["disambiguation_note"] = note
+    return ret
 
 
 def _fetch_nws_alerts(lat, lon):
@@ -221,10 +237,8 @@ def _fetch_gdacs_alerts(lat, lon):
         return []
 
 
-@tool
-def get_alerts(location: str) -> dict:
-    """Get any active government-issued weather alerts or warnings for a location."""
-    lat, lon, display, country = _geocode(location)
+def _get_alerts_data(location: str, user_lat=None, user_lon=None) -> dict:
+    lat, lon, display, country, note = _geocode(location, user_lat, user_lon)
     
     if country == "US":
         alerts = _fetch_nws_alerts(lat, lon)
@@ -233,11 +247,14 @@ def get_alerts(location: str) -> dict:
         alerts = _fetch_gdacs_alerts(lat, lon)
         source = "Global Disaster Alert and Coordination System (GDACS)"
         
-    return {
+    ret = {
         "location": display,
         "alerts": alerts,
         "note": f"Alerts fetched from {source}" if alerts else f"No active alerts from {source}."
     }
+    if note:
+        ret["disambiguation_note"] = note
+    return ret
 
 
 def _advise(activity, weather):
@@ -270,13 +287,80 @@ def _advise(activity, weather):
     return verdict + " " + "; ".join(reasons) + "."
 
 
-@tool
-def activity_advisor(location: str, activity: str, lang: str = "en") -> dict:
-    """Advise whether current weather at a location suits a given outdoor activity."""
-    weather = _current_weather_data(location, lang=lang)
-    return {
-        "location": weather["location"],
-        "activity": activity,
-        "advice": _advise(activity, weather),
-        "weather": weather,
-    }
+def build_tools(user_lat=None, user_lon=None, local_time=None):
+    """Factory function to build stateful tools containing the user's location and time context."""
+    
+    @tool
+    def get_current_weather(location: str, units: str = "metric", lang: str = "en") -> dict:
+        """Get the current temperature, humidity, wind, and sky conditions for a location."""
+        return _current_weather_data(location, units, lang, user_lat, user_lon)
+        
+    @tool
+    def get_forecast(location: str, days: int = 3, units: str = "metric", lang: str = "en") -> dict:
+        """Get a multi-day daily weather forecast (high/low, conditions) for a location."""
+        return _forecast_data(location, days, units, lang, user_lat, user_lon)
+        
+    @tool
+    def get_alerts(location: str) -> dict:
+        """Get any active government-issued weather alerts or warnings for a location."""
+        return _get_alerts_data(location, user_lat, user_lon)
+        
+    @tool
+    def activity_advisor(location: str, activity: str, lang: str = "en") -> dict:
+        """Advise whether current weather at a location suits a given outdoor activity."""
+        weather = _current_weather_data(location, lang=lang, user_lat=user_lat, user_lon=user_lon)
+        return {
+            "location": weather["location"],
+            "activity": activity,
+            "advice": _advise(activity, weather),
+            "weather": weather,
+        }
+        
+    @tool
+    def get_hourly_window(location: str, start_ts: int, end_ts: int, units: str = "metric", lang: str = "en") -> dict:
+        """Get precise hourly weather data for a specific Unix timestamp window (e.g. for 'tonight' or 'tomorrow at 9am')."""
+        lat, lon, display, _, note = _geocode(location, user_lat, user_lon)
+        payload = _http_get_json(
+            FORECAST_URL, {"lat": lat, "lon": lon, "units": units, "lang": lang, "appid": OWM_API_KEY}
+        )
+        
+        filtered = []
+        for entry in (payload.get("list") or []):
+            ts = entry.get("dt", 0)
+            if start_ts <= ts <= end_ts:
+                weather = (entry.get("weather") or [{}])[0]
+                filtered.append({
+                    "dt_txt": entry.get("dt_txt"),
+                    "temp": entry.get("main", {}).get("temp"),
+                    "description": weather.get("description"),
+                    "pop": entry.get("pop", 0),
+                    "wind_speed": entry.get("wind", {}).get("speed", 0)
+                })
+                
+        ret = {
+            "location": display,
+            "units": units,
+            "window_data": filtered
+        }
+        if note:
+            ret["disambiguation_note"] = note
+        return ret
+        
+    @tool
+    def parse_time_expression(phrase: str) -> dict:
+        """Parse natural language time (like 'tonight', 'tomorrow 8am') into Unix timestamps."""
+        try:
+            import dateparser
+            from datetime import datetime, timezone
+            
+            now = dateparser.parse(local_time) if local_time else datetime.now(timezone.utc)
+            settings = {'RELATIVE_BASE': now, 'TIMEZONE': now.tzname() or 'UTC', 'RETURN_AS_TIMEZONE_AWARE': True}
+            parsed = dateparser.parse(phrase, settings=settings)
+            
+            if parsed:
+                return {"parsed_time_iso": parsed.isoformat(), "parsed_time_unix": int(parsed.timestamp())}
+            return {"error": f"Could not parse '{phrase}'"}
+        except ImportError:
+            return {"error": "dateparser module not installed."}
+
+    return [get_current_weather, get_forecast, get_alerts, activity_advisor, get_hourly_window, parse_time_expression]

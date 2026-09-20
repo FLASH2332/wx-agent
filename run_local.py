@@ -47,15 +47,28 @@ class RequestHandler(BaseHTTPRequestHandler):
             messages = body.get("messages") or []
             user_lang = body.get("lang") or "en"
             context_location = body.get("contextLocation")
+            user_lat = body.get("userLat")
+            user_lon = body.get("userLon")
+            local_time = body.get("localTime")
             
             try:
                 # Call the agent directly (uses Groq)
-                response_text, updated_messages = run_agent(text, messages, user_lang=user_lang, context_location=context_location)
+                ui_payload, updated_messages = run_agent(
+                    text, 
+                    messages, 
+                    user_lang=user_lang, 
+                    context_location=context_location,
+                    user_lat=user_lat,
+                    user_lon=user_lon,
+                    local_time=local_time
+                )
                 weather_data = latest_weather_data(updated_messages)
                 forecast_data = latest_forecast_data(updated_messages)
                 
                 resp_payload = {
-                    "response_text": response_text,
+                    "response_text": ui_payload.get("short_answer", ""),
+                    "ui_mode": ui_payload.get("ui_mode", "chat"),
+                    "comparison_data": ui_payload.get("comparison_data"),
                     "audio_b64": "",  # Audio disabled in local direct mode
                     "weather_data": weather_data,
                     "forecast_data": forecast_data,
@@ -148,7 +161,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             location = body.get("location")
             lang = body.get("lang", "en")
             
-            from tools import _current_weather_data, _forecast_data, LocationNotFoundError
+            from tools import _current_weather_data, _forecast_data
             try:
                 if not location:
                     raise Exception("Missing location")
