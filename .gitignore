@@ -6,3 +6,4 @@ samconfig.toml
 .idea/
 .vscode/
 AGENTS.md
+cli_audio/
