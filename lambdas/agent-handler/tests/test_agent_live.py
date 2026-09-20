@@ -17,8 +17,6 @@ pytestmark = [
     ),
 ]
 
-<<<<<<< Updated upstream
-=======
 _ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
 
 
@@ -33,7 +31,6 @@ def _load_root_env():
     os.environ.setdefault("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
     os.environ.setdefault("AWS_REGION", "us-east-2")
 
->>>>>>> Stashed changes
 
 @pytest.fixture(scope="module")
 def agent_mod():
