@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { History, X } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import TopBar from '@/components/TopBar';
 import VoiceInput from '@/components/VoiceInput';
@@ -23,18 +24,31 @@ export default function Home() {
   const [alerts, setAlerts] = useState([]); 
   
   const [messages, setMessages] = useState([]);
+  const [latestQuestion, setLatestQuestion] = useState("");
   const [latestResponse, setLatestResponse] = useState("");
   const [latestAudio, setLatestAudio] = useState("");
-  
+
+  // Voice-first: the latest turn shows briefly above the input, then fades.
+  const [showBubble, setShowBubble] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
   // Explicit language state (overrides auto-detection for subsequent turns)
   const [selectedLang, setSelectedLang] = useState("en");
-  
+
   const [errorMsg, setErrorMsg] = useState("");
   const endOfChatRef = useRef(null);
 
+  // Auto-dismiss the latest-turn bubble once the answer has landed.
   useEffect(() => {
-    endOfChatRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, appState]);
+    if (appState === 'result' && latestResponse) {
+      const t = setTimeout(() => setShowBubble(false), 9000);
+      return () => clearTimeout(t);
+    }
+  }, [appState, latestResponse]);
+
+  useEffect(() => {
+    if (showHistory) endOfChatRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, showHistory]);
 
   useEffect(() => {
     // On initial load, try to get the user's location to populate the dashboard
@@ -82,10 +96,12 @@ export default function Home() {
     
     if (!isSilentLocationUpdate) {
       setMessages([...currentMessages, userMsg]);
+      setLatestQuestion(text.trim());
       setLatestResponse("");
       setLatestAudio("");
+      setShowBubble(true);
     }
-    
+
     setAppState('processing');
     setErrorMsg("");
     
@@ -153,31 +169,75 @@ export default function Home() {
   };
 
   const dock = (
-    <div className="max-w-3xl mx-auto w-full px-4 pt-3 pb-4 flex flex-col items-center">
-      {/* Conversation log — sits neatly above the input, never over the dashboard */}
-      {(messages.length > 0 || appState === 'processing') && (
-        <div className="w-full bg-white/[0.03] border border-white/[0.07] rounded-[18px]
-          p-3 mb-3 max-h-36 flex flex-col">
-          <div className="overflow-y-auto hide-scrollbar flex-1 pr-1">
-            <ChatHistory messages={messages} currentLang={selectedLang} />
-            {appState === 'processing' && (
-              <div className="flex justify-start my-1.5">
-                <div className="bg-white/[0.06] text-white/60 px-3.5 py-2
-                  rounded-[14px] rounded-tl-[4px] border border-white/[0.06]
-                  text-sm flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-blue-400/80 rounded-full animate-ping" />
-                  <span>Weather Buddy is thinking…</span>
-                </div>
-              </div>
-            )}
-            <div ref={endOfChatRef} className="h-1" />
-          </div>
+    <div className="max-w-3xl mx-auto w-full px-4 pt-3 pb-4">
+      {/* Latest turn only — appears above the input, then fades. The real answer
+          is the dashboard updating; full transcript lives in the history drawer. */}
+      {showBubble && (latestQuestion || appState === 'processing') && (
+        <div className="mb-3 flex flex-col gap-1.5 animate-fade-in-up">
+          {latestQuestion && (
+            <div className="self-end max-w-[80%] bg-white/[0.12] text-white text-sm px-3.5 py-2
+              rounded-2xl rounded-br-md">
+              {latestQuestion}
+            </div>
+          )}
+          {appState === 'processing' ? (
+            <div className="self-start bg-white/[0.06] text-white/60 text-sm px-3.5 py-2
+              rounded-2xl rounded-bl-md flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-white/70 rounded-full animate-ping" />
+              Weather Buddy is thinking…
+            </div>
+          ) : latestResponse ? (
+            <div className="self-start max-w-[85%] bg-white/[0.06] border border-white/10
+              text-white/90 text-sm px-3.5 py-2.5 rounded-2xl rounded-bl-md">
+              {latestResponse}
+            </div>
+          ) : null}
         </div>
       )}
 
-      <div className="flex flex-col items-center w-full">
-        <AudioPlayer audioBase64={latestAudio} autoPlay={true} />
-        <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} appState={appState} currentLang={selectedLang} />
+      <div className="flex items-center gap-2 w-full">
+        <div className="flex-1 min-w-0 flex flex-col">
+          <AudioPlayer audioBase64={latestAudio} autoPlay={true} />
+          <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} appState={appState} currentLang={selectedLang} />
+        </div>
+        {messages.length > 0 && (
+          <button
+            onClick={() => setShowHistory(true)}
+            title="Conversation history"
+            aria-label="Open conversation history"
+            className="shrink-0 w-12 h-12 flex items-center justify-center rounded-2xl
+              bg-white/[0.06] border border-white/10 text-white/70
+              hover:bg-white/[0.12] hover:text-white transition-colors"
+          >
+            <History className="w-5 h-5" strokeWidth={1.75} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const historyDrawer = showHistory && (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setShowHistory(false)}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in-up" />
+      <div
+        className="relative w-full max-w-md h-full bg-slate-950/90 backdrop-blur-2xl
+          border-l border-white/10 flex flex-col animate-slide-in-right"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+          <h3 className="font-medium text-white">Conversation</h3>
+          <button
+            onClick={() => setShowHistory(false)}
+            aria-label="Close"
+            className="w-8 h-8 flex items-center justify-center rounded-full text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <X className="w-5 h-5" strokeWidth={1.75} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto hide-scrollbar p-4">
+          <ChatHistory messages={messages} currentLang={selectedLang} />
+          <div ref={endOfChatRef} className="h-1" />
+        </div>
       </div>
     </div>
   );
@@ -218,13 +278,17 @@ export default function Home() {
           )}
         </div>
 
-        {/* RIGHT COLUMN: Sidebar */}
-        <div className="w-full lg:w-80 shrink-0 flex flex-col gap-5">
-          {weatherData && <ForecastList days={forecastDays} currentLang={selectedLang} />}
-        </div>
+        {/* RIGHT COLUMN: Sidebar — only present once there's data, so the
+            loading skeleton spans the full width and never looks off-center. */}
+        {weatherData && (
+          <div className="w-full lg:w-80 shrink-0 flex flex-col gap-5">
+            <ForecastList days={forecastDays} currentLang={selectedLang} />
+          </div>
+        )}
       </div>
 
       <ErrorToast message={errorMsg} onDismiss={() => setErrorMsg("")} />
+      {historyDrawer}
     </AppShell>
   );
 }
