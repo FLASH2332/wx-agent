@@ -8,11 +8,17 @@ Parameters:
   OwmApiKey:
     Type: String
     NoEcho: true
-    Description: OpenWeatherMap API key (One Call API 3.0).
-  BedrockModelId:
+    Description: OpenWeatherMap API key (free tier, v2.5 endpoints).
+  LlmModelId:
     Type: String
-    Default: anthropic.claude-3-haiku-20240307-v1:0
-    Description: Bedrock model id used by the agent.
+    Description: LiteLLM model id, e.g. "openai/qwen2.5:7b-instruct".
+  LlmBaseUrl:
+    Type: String
+    Description: OpenAI-compatible LLM endpoint, e.g. "http://<elastic-ip>:11434/v1".
+  LlmApiKey:
+    Type: String
+    NoEcho: true
+    Description: API key for the LLM endpoint (use "ollama" for local Ollama).
 
 Globals:
   Function:
@@ -48,22 +54,23 @@ Resources:
       CodeUri: lambdas/agent-handler/
       Handler: handler.handler
       Description: Runs the Strands weather agent behind POST /query.
+      # Self-hosted inference is slower than Bedrock; give multi-tool queries headroom.
+      Timeout: 60
+      # The dependency set (litellm/strands) is large; more memory also means more
+      # CPU, which speeds up the heavy cold-start imports.
+      MemorySize: 512
       Environment:
         Variables:
           OWM_API_KEY: !Ref OwmApiKey
-          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          LLM_MODEL_ID: !Ref LlmModelId
+          LLM_BASE_URL: !Ref LlmBaseUrl
+          LLM_API_KEY: !Ref LlmApiKey
           TTS_LAMBDA_NAME: !Ref TtsFunction
+          # Only /tmp is writable on Lambda; point HOME there in case any library
+          # (e.g. litellm) tries to write a cache/config at import time.
+          HOME: /tmp
       Policies:
         - Statement:
-            # Converse (InvokeModel) + ConverseStream (InvokeModelWithResponseStream,
-            # required because the agent runs in streaming mode by default).
-            - Effect: Allow
-              Action:
-                - bedrock:InvokeModel
-                - bedrock:InvokeModelWithResponseStream
-              Resource:
-                - !Sub "arn:aws:bedrock:*::foundation-model/*"
-                - !Sub "arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*"
             - Effect: Allow
               Action: translate:TranslateText
               Resource: "*"

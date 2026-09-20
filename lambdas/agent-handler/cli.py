@@ -11,8 +11,8 @@ Usage (from lambdas/agent-handler, using its venv):
     .venv/Scripts/python cli.py --no-audio      # text only
     .venv/Scripts/python cli.py --out some/dir  # choose audio output folder
 
-Config is read from the repo-root .env (OWM_API_KEY, MODEL_PROVIDER, GROQ_API_KEY,
-etc.). For no Bedrock quota, set MODEL_PROVIDER=groq + GROQ_API_KEY in .env.
+Config is read from the repo-root .env (OWM_API_KEY, LLM_MODEL_ID, LLM_BASE_URL,
+LLM_API_KEY, plus AWS creds for Comprehend/Translate/Polly).
 Commands inside the CLI: 'exit'/'quit' to leave, 'reset' to clear history.
 """
 
@@ -90,8 +90,8 @@ def main():
     if not args.no_audio:
         out_dir.mkdir(parents=True, exist_ok=True)
 
-    provider = os.environ.get("MODEL_PROVIDER", "bedrock")
-    print(f"Weather Buddy CLI  |  provider={provider}  |  audio={'off' if args.no_audio else out_dir}")
+    model_id = os.environ.get("LLM_MODEL_ID", "?")
+    print(f"Weather Buddy CLI  |  model={model_id}  |  audio={'off' if args.no_audio else out_dir}")
     print("Type a question, or 'reset' to clear history, 'exit' to quit.\n")
 
     messages = []

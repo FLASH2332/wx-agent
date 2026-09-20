@@ -131,15 +131,7 @@ def run_agent(text, messages=None, user_lang="en", context_location=None):
     returned history includes the new user turn and assistant turn(s).
     """
     prompt = SYSTEM_PROMPT
-    
-    # Map the language code to a full language name for the LLM prompt
-    LANG_MAP = {
-        "en": "English", "hi": "Hindi", "fr": "French", 
-        "de": "German", "es": "Spanish", "ta": "Tamil"
-    }
-    lang_name = LANG_MAP.get(user_lang, "English")
-    
-    prompt += f"\n\nIMPORTANT INSTRUCTION: You must ALWAYS respond in {lang_name}."
+    prompt += f"\n\nIMPORTANT INSTRUCTION: You must ALWAYS respond in the language corresponding to the ISO-639-1 code '{user_lang}'."
     if context_location:
         prompt += f"\n\nContext: The user is currently viewing the dashboard for {context_location}. If they ask a question without specifying a location, assume they mean {context_location}."
         
