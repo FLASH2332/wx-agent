@@ -162,50 +162,56 @@ export default function Home() {
       />
 
       {/* DASHBOARD - MULTI-COLUMN LAYOUT */}
-      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 flex-1 pb-64">
+      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 flex-1 pb-56">
         
         {/* LEFT COLUMN: Main Weather */}
-        <div className="flex-1 flex flex-col gap-6">
+        <div className="flex-1 flex flex-col gap-5">
           {appState === 'processing' && !weatherData && <SkeletonCard />}
           
           {weatherData && (
             <>
-              {/* Giant Weather Card on Desktop */}
-              <div className="lg:transform lg:scale-105 lg:origin-top-left transition-transform duration-500">
-                <WeatherCard weatherData={weatherData} currentLang={selectedLang} />
-              </div>
+              <WeatherCard weatherData={weatherData} currentLang={selectedLang} />
               <HourlyTimeline hours={forecastHourly} currentLang={selectedLang} />
             </>
           )}
           
           {appState === 'idle' && !weatherData && (
-            <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-white/10 rounded-3xl glass-panel p-6">
-              <p className="text-white/40 font-medium mb-4">Ask Weather Buddy for a forecast...</p>
+            <div className="flex flex-col items-center justify-center h-64 
+              border border-dashed border-white/[0.08] rounded-[28px] 
+              bg-white/[0.02] p-6">
+              <p className="text-white/35 font-medium mb-4 text-sm">Ask Weather Buddy for a forecast…</p>
               <SuggestionChips onSelect={(text) => handleQuery(text, false)} />
             </div>
           )}
         </div>
 
-        {/* RIGHT COLUMN: Sidebar (Forecast & Details) */}
-        <div className="w-full lg:w-80 flex flex-col gap-6">
+        {/* RIGHT COLUMN: Sidebar */}
+        <div className="w-full lg:w-80 flex flex-col gap-5">
           {weatherData && <ForecastList days={forecastDays} currentLang={selectedLang} />}
         </div>
       </div>
 
-      {/* FIXED BOTTOM DOCK (Chat + Voice) */}
-      <div className="fixed bottom-0 left-0 w-full bg-gradient-to-t from-[#0f172a] via-[#0f172a]/95 to-transparent pt-12 pb-6 px-4 z-40 pointer-events-none">
+      {/* FIXED BOTTOM DOCK */}
+      <div className="fixed bottom-0 left-0 w-full 
+        bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent 
+        pt-10 pb-6 px-4 z-40 pointer-events-none">
         <div className="max-w-4xl mx-auto w-full flex flex-col items-center pointer-events-auto relative">
           
-          {/* Chat log wrapper floating above mic */}
+          {/* Chat log — outer 24px */}
           {(messages.length > 0 || appState === 'processing') && (
-            <div className="w-full max-w-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-3xl p-4 mb-4 shadow-2xl max-h-48 flex flex-col">
+            <div className="w-full max-w-2xl bg-slate-900/90 backdrop-blur-xl 
+              border border-slate-700/50 rounded-[24px] p-4 mb-4 
+              shadow-[0_4px_16px_rgba(0,0,0,0.3),0_12px_40px_rgba(0,0,0,0.2)]
+              max-h-48 flex flex-col">
               <div className="overflow-y-auto hide-scrollbar flex-1 pr-2">
                 <ChatHistory messages={messages} currentLang={selectedLang} />
                 {appState === 'processing' && (
                   <div className="flex justify-start my-2">
-                    <div className="glass-panel bg-white/10 text-white/70 px-4 py-2 rounded-2xl rounded-tl-sm border border-white/10 text-sm animate-pulse flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-ping" />
-                      <span>Weather Buddy is thinking...</span>
+                    <div className="bg-white/[0.06] text-white/60 px-4 py-2.5 
+                      rounded-[16px] rounded-tl-[4px] border border-white/[0.06] 
+                      text-sm animate-pulse flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 bg-blue-400/80 rounded-full animate-ping" />
+                      <span>Weather Buddy is thinking…</span>
                     </div>
                   </div>
                 )}

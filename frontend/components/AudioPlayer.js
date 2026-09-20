@@ -52,21 +52,32 @@ export default function AudioPlayer({ audioBase64, autoPlay = true }) {
   if (!hasAudio) return <audio ref={audioRef} className="hidden" />;
 
   return (
-    <div className="flex items-center gap-3 p-2 px-4 rounded-full glass-panel bg-white/5 border-white/10 mb-4 self-center w-full max-w-[200px] shadow-lg">
+    <div className="flex items-center gap-3 p-2 px-4 rounded-full 
+      bg-white/[0.04] border border-white/[0.06] mb-4 self-center w-full max-w-[200px] 
+      shadow-[0_1px_3px_rgba(0,0,0,0.12),0_4px_12px_rgba(0,0,0,0.08)]
+      backdrop-blur-xl">
+      {/* Play/Pause — optical alignment: Play icon nudged 1px right */}
       <button 
         onClick={togglePlay}
-        className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors shrink-0 text-white"
+        className="w-8 h-8 min-w-[32px] rounded-full bg-white/[0.08] hover:bg-white/[0.14] 
+          flex items-center justify-center 
+          transition-[background-color,transform] duration-150 press-scale
+          shrink-0 text-white"
         aria-label={isPlaying ? "Pause audio" : "Play audio"}
       >
-        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+        {isPlaying 
+          ? <Pause className="w-3.5 h-3.5" strokeWidth={2} /> 
+          : <Play className="w-3.5 h-3.5 ml-[1px]" strokeWidth={2} />}
       </button>
       
-      {/* Visualizer (CSS only simulation) */}
-      <div className="flex-1 flex items-center gap-1 h-4 overflow-hidden">
+      {/* Visualizer bars */}
+      <div className="flex-1 flex items-center gap-[3px] h-4 overflow-hidden">
         {[1, 2, 3, 4, 5, 6, 7].map((i) => (
           <div 
             key={i}
-            className={`w-1.5 bg-blue-400 rounded-full transition-all duration-150 ${isPlaying ? 'animate-pulse' : 'h-1 opacity-50'}`}
+            className={`w-[5px] bg-blue-400/80 rounded-full 
+              transition-[height,opacity] duration-150
+              ${isPlaying ? 'animate-pulse' : 'h-1 opacity-40'}`}
             style={{ 
               height: isPlaying ? `${20 + Math.random() * 80}%` : '4px',
               animationDelay: `${i * 0.1}s` 
@@ -75,7 +86,11 @@ export default function AudioPlayer({ audioBase64, autoPlay = true }) {
         ))}
       </div>
       
-      <Volume2 className={`w-4 h-4 text-white/50 ${isPlaying ? 'text-blue-400' : ''}`} />
+      <Volume2 
+        className={`w-4 h-4 transition-[color] duration-150 
+          ${isPlaying ? 'text-blue-400/80' : 'text-white/35'}`} 
+        strokeWidth={1.5}
+      />
       
       <audio ref={audioRef} className="hidden" />
     </div>
