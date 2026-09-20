@@ -2,34 +2,98 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 :root {
   --background: #0f172a;
   --foreground: #f8fafc;
+  --ease-out-expo: cubic-bezier(0.2, 0, 0, 1);
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Glassmorphism utility */
+/* ── Glassmorphism surface ────────────────────────────────────── */
+/* Shadows for elevation, borders for structure.                  */
+/* Layered transparent box-shadows replace single flat borders.   */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.15),
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    0 12px 40px rgba(0, 0, 0, 0.06);
 }
 
-/* Hide scrollbar for Chrome, Safari and Opera */
+/* ── Image outlines ───────────────────────────────────────────── */
+/* Pure white at low opacity for dark mode, never a tinted color. */
+.weather-icon {
+  outline: 1px solid oklch(1 0 0 / 0.1);
+  outline-offset: -1px;
+  border-radius: 9999px;
+}
+
+/* ── Interruptible transitions ────────────────────────────────── */
+/* Name exact properties; never transition: all                   */
+.transition-interactive {
+  transition-property: transform, opacity, box-shadow, border-color;
+  transition-duration: 200ms;
+  transition-timing-function: var(--ease-out-expo);
+}
+
+/* ── Scale on press — always 0.96 ─────────────────────────────── */
+.press-scale {
+  transition-property: transform;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out-expo);
+}
+.press-scale:active {
+  transform: scale(0.96);
+}
+
+/* ── Subtle enter/exit animations ─────────────────────────────── */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in-up {
+  animation: fade-in-up 0.35s var(--ease-out-expo) both;
+}
+
+/* Stagger utility: each child gets +100ms delay */
+.stagger-children > * {
+  animation: fade-in-up 0.35s var(--ease-out-expo) both;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 100ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 200ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 300ms; }
+
+/* ── Hide scrollbar ───────────────────────────────────────────── */
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
 }
-
-/* Hide scrollbar for IE, Edge and Firefox */
 .hide-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Tabular numbers for weather data ─────────────────────────── */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
