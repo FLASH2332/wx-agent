@@ -14,7 +14,7 @@ import os
 
 import boto3
 
-from agent import latest_weather_data, run_agent
+from agent import latest_weather_data, latest_forecast_data, run_agent
 from tools import LocationNotFoundError
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
@@ -91,6 +91,11 @@ def handler(event, context=None):
     try:
         user_lang = _detect_language(text, fallback=fallback_lang)
 
+        # Let the user's manual dropdown explicitly override comprehension 
+        # so subsequent turns are generated and synthesized correctly
+        if fallback_lang and fallback_lang != "en" and fallback_lang != user_lang:
+            user_lang = fallback_lang
+
         english_text = text if user_lang == "en" else _translate(text, user_lang, "en")
         response_en, updated_messages = run_agent(english_text, messages)
         final_text = (
@@ -101,6 +106,7 @@ def handler(event, context=None):
 
         audio_b64 = _synthesize(final_text, user_lang)
         weather_data = latest_weather_data(updated_messages)
+        forecast_data = latest_forecast_data(updated_messages)
 
         return _response(
             200,
@@ -108,6 +114,7 @@ def handler(event, context=None):
                 "response_text": final_text,
                 "audio_b64": audio_b64,
                 "weather_data": weather_data,
+                "forecast_data": forecast_data,
                 "lang": user_lang,
                 "messages": updated_messages,
             },
