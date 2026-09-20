@@ -26,9 +26,10 @@ export default function AppShell({ children, footer, banner, sky = DEFAULT_SKY }
         </div>
       </main>
 
-      {/* Docked input — flex-none, structurally below the content */}
+      {/* Docked input — flex-none, structurally below the content. No divider/band:
+          it floats directly on the sky (the input pill carries its own contrast). */}
       {footer && (
-        <div className="relative z-30 shrink-0 border-t border-white/10 bg-black/25 backdrop-blur-2xl">
+        <div className="relative z-30 shrink-0">
           {footer}
         </div>
       )}
