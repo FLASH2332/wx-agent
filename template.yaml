@@ -9,14 +9,23 @@ Parameters:
     Type: String
     NoEcho: true
     Description: OpenWeatherMap API key (free tier, v2.5 endpoints).
-  GroqApiKey:
+  LlmModelId:
+    Type: String
+    Default: groq/llama-3.1-8b-instant
+    Description: >
+      LiteLLM model id (prefix picks the provider). Examples:
+      openai/qwen2.5:7b-instruct (self-hosted Ollama, with LlmBaseUrl),
+      groq/llama-3.1-8b-instant (Groq).
+  LlmBaseUrl:
+    Type: String
+    Default: ""
+    Description: >
+      OpenAI-compatible endpoint for self-hosted models
+      (e.g. http://<ec2-ip>:11434/v1). Leave empty for hosted providers like Groq.
+  LlmApiKey:
     Type: String
     NoEcho: true
-    Description: Groq API key (OpenAI-compatible endpoint).
-  GroqModelId:
-    Type: String
-    Default: llama-3.1-8b-instant
-    Description: Groq model id — tool-capable, non-reasoning (e.g. llama-3.1-8b-instant).
+    Description: API key for the LLM endpoint ("ollama" for a local Ollama server).
 
 Globals:
   Function:
@@ -52,16 +61,18 @@ Resources:
       CodeUri: lambdas/agent-handler/
       Handler: handler.handler
       Description: Runs the Strands weather agent behind POST /query.
-      # Headroom for the tool loop + translate + TTS (API Gateway still caps at 29s).
-      Timeout: 60
+      # 5-minute headroom for the tool loop + TTS when using slow self-hosted models.
+      # The Lambda Function URL (FunctionUrlConfig below) has no 29s cap, so this
+      # timeout is the actual limit seen by the frontend.
+      Timeout: 300
       # More memory also means more CPU, which speeds up cold-start imports.
       MemorySize: 512
       Environment:
         Variables:
           OWM_API_KEY: !Ref OwmApiKey
-          MODEL_PROVIDER: groq
-          GROQ_API_KEY: !Ref GroqApiKey
-          GROQ_MODEL_ID: !Ref GroqModelId
+          LLM_MODEL_ID: !Ref LlmModelId
+          LLM_BASE_URL: !Ref LlmBaseUrl
+          LLM_API_KEY: !Ref LlmApiKey
           TTS_LAMBDA_NAME: !Ref TtsFunction
           # Only /tmp is writable on Lambda; point HOME there in case a library
           # tries to write a cache/config at import time.
@@ -73,6 +84,15 @@ Resources:
             - Effect: Allow
               Action: lambda:InvokeFunction
               Resource: !GetAtt TtsFunction.Arn
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowHeaders:
+            - "Content-Type"
+          AllowMethods:
+            - "POST"
       Events:
         Query:
           Type: Api
@@ -92,8 +112,11 @@ Resources:
 
 Outputs:
   ApiUrl:
-    Description: Invoke URL for POST /query.
+    Description: API Gateway invoke URL for POST /query (29s hard cap — use FunctionUrl for slow models).
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/query"
+  AgentFunctionUrl:
+    Description: Lambda Function URL for POST /query and POST /transcribe (no 29s cap).
+    Value: !GetAtt AgentFunctionUrl.FunctionUrl
   AgentFunctionName:
     Value: !Ref AgentFunction
   TtsFunctionName:

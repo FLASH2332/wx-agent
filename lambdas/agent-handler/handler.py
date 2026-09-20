@@ -39,6 +39,10 @@ def _parse_body(event):
         return event if isinstance(event, dict) else {}
     if isinstance(body, (dict, list)):
         return body
+    # Lambda Function URL sets isBase64Encoded=True when the body is b64-encoded.
+    if event.get("isBase64Encoded") and isinstance(body, str):
+        import base64
+        body = base64.b64decode(body).decode("utf-8")
     return json.loads(body)
 
 
@@ -57,7 +61,8 @@ def _synthesize(text, lang):
 
 
 def handler(event, context=None):
-    path = event.get("path", "")
+    # rawPath is set by Lambda Function URL; path is set by API Gateway REST.
+    path = event.get("rawPath") or event.get("path", "")
     
     # ---------------------------------------------------------
     if path.endswith("/sync"):
@@ -83,43 +88,55 @@ def handler(event, context=None):
     # Route: /transcribe
     # ---------------------------------------------------------
     if path.endswith("/transcribe"):
+        try:
             body = _parse_body(event)
             audio_b64 = body.get("audio_b64")
             if not audio_b64:
                 return _response(400, {"error": "Missing audio_b64"})
                 
             import base64
-            from email.message import Message
+            import urllib.request
             
-            # Setup multipart form data for Groq Whisper
-            boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
-            body_bytes = (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="file"; filename="audio.webm"\r\n'
-                f"Content-Type: audio/webm\r\n\r\n"
-            ).encode("utf-8")
-            body_bytes += base64.b64decode(audio_b64)
-            body_bytes += f"\r\n--{boundary}\r\n".encode("utf-8")
-            body_bytes += (
-                f'Content-Disposition: form-data; name="model"\r\n\r\n'
-                f"whisper-large-v3\r\n"
-                f"--{boundary}--\r\n"
-            ).encode("utf-8")
+            audio_bytes = base64.b64decode(audio_b64)
+            boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW'
+            
+            # Construct multipart/form-data manually since we don't have requests
+            data = []
+            data.append(f'--{boundary}')
+            data.append('Content-Disposition: form-data; name="model"')
+            data.append('')
+            data.append('whisper-large-v3')
+            
+            data.append(f'--{boundary}')
+            data.append('Content-Disposition: form-data; name="response_format"')
+            data.append('')
+            data.append('verbose_json')
+            
+            data.append(f'--{boundary}')
+            data.append('Content-Disposition: form-data; name="file"; filename="audio.webm"')
+            data.append('Content-Type: audio/webm')
+            data.append('')
+            
+            body_bytes = '\r\n'.join(data).encode('utf-8') + b'\r\n' + audio_bytes + b'\r\n' + f'--{boundary}--\r\n'.encode('utf-8')
+            
+            base_url = (os.environ.get("LLM_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
+            if base_url.endswith("/chat/completions"):
+                base_url = base_url[:-17]
             
             req = urllib.request.Request(
-                "https://api.groq.com/openai/v1/audio/transcriptions",
+                f"{base_url}/audio/transcriptions",
                 data=body_bytes,
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('GROQ_API_KEY')}",
-                    "Content-Type": f"multipart/form-data; boundary={boundary}",
-                    "User-Agent": "WeatherBuddy/1.0",
+                    'Authorization': f'Bearer {os.environ.get("LLM_API_KEY")}',
+                    'Content-Type': f'multipart/form-data; boundary={boundary}',
+                    'User-Agent': 'WeatherBuddy/1.0'
                 },
                 method="POST"
             )
-            with urllib.request.urlopen(req) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
+            
+            with urllib.request.urlopen(req) as response:
+                resp_data = json.loads(response.read().decode('utf-8'))
                 
-            # Fallback to language routing if supported by whisper response or just return text
             return _response(200, {
                 "text": resp_data.get("text", ""),
                 "language": resp_data.get("language", "en")
@@ -148,7 +165,7 @@ def handler(event, context=None):
     try:
         final_text, updated_messages = run_agent(text, messages, user_lang=user_lang, context_location=context_location, user_lat=user_lat, user_lon=user_lon, local_time=local_time)
 
-        audio_b64 = _synthesize(final_text, user_lang)
+        audio_b64 = ""  # TTS disabled; call _synthesize(final_text, user_lang) to re-enable
         weather_data = latest_weather_data(updated_messages)
         forecast_data = latest_forecast_data(updated_messages)
 
