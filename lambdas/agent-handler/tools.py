@@ -9,12 +9,15 @@ are available rather than calling a paid API.
 """
 
 import json
+import logging
 import os
 import urllib.parse
 import urllib.request
 from collections import defaultdict
 
 from strands import tool
+
+logger = logging.getLogger(__name__)
 
 OWM_API_KEY = os.environ["OWM_API_KEY"]
 
@@ -31,6 +34,9 @@ class LocationNotFoundError(Exception):
 
 def _http_get_json(url, params):
     """Perform a GET request and parse the JSON body."""
+    # Log each OWM call (without the API key) so multi-city queries are visible.
+    location = params.get("q") or f"{params.get('lat')},{params.get('lon')}"
+    logger.info("OWM request: %s (%s)", url.rsplit("/", 1)[-1], location)
     query = urllib.parse.urlencode(params)
     request = urllib.request.Request(f"{url}?{query}", method="GET")
     with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:
