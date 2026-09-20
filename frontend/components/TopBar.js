@@ -24,7 +24,6 @@ export default function TopBar({ currentLang, onLangChange, onLocationSearch }) 
   const [searchInput, setSearchInput] = useState('');
   const greeting = GREETINGS[currentLang] || GREETINGS['en'];
   
-  // Dynamically add the current language if it's not in the default list
   const hasCurrentLang = LANG_OPTIONS.some(opt => opt.code === currentLang);
   const optionsToRender = hasCurrentLang 
     ? LANG_OPTIONS 
@@ -39,33 +38,43 @@ export default function TopBar({ currentLang, onLangChange, onLocationSearch }) 
   };
 
   return (
-    <header className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 w-full glass-panel bg-white/5 px-6 py-4 rounded-3xl border-white/10 shadow-lg">
+    <header className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 w-full
+      bg-white/[0.03] border border-white/[0.06] px-5 py-3.5 rounded-[22px]
+      shadow-[0_1px_3px_rgba(0,0,0,0.12),0_4px_16px_rgba(0,0,0,0.08)]
+      transition-interactive">
       <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-bold tracking-tight text-white/90">
-          {greeting}! <span className="text-xl font-normal text-white/60 ml-2">{getTranslation(currentLang, 'weatherBuddy')}</span>
+        <h1 className="text-xl lg:text-2xl font-semibold tracking-tight text-white/90">
+          {greeting}!
+          <span className="text-base lg:text-lg font-normal text-white/45 ml-2">
+            {getTranslation(currentLang, 'weatherBuddy')}
+          </span>
         </h1>
       </div>
 
-      <div className="flex items-center gap-4 w-full md:w-auto">
-        {/* Manual Location Search */}
-        <form onSubmit={handleSearchSubmit} className="relative flex-1 md:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
+      <div className="flex items-center gap-3 w-full md:w-auto">
+        {/* Search — concentric radius: outer 22px, input 14px, padding ~8px */}
+        <form onSubmit={handleSearchSubmit} className="relative flex-1 md:w-60">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/35" strokeWidth={1.5} />
           <input 
             type="text"
             placeholder={getTranslation(currentLang, 'searchPlaceholder')}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full bg-black/20 border border-white/10 rounded-full py-2 pl-9 pr-4 text-sm text-white placeholder:text-white/40 focus:outline-none focus:border-white/30 transition-colors"
+            className="w-full bg-black/20 border border-white/[0.06] rounded-[14px] py-2 pl-9 pr-4 
+              text-sm text-white placeholder:text-white/30 
+              outline-none transition-[border-color,box-shadow] duration-200
+              focus:border-white/20 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.15)]"
           />
         </form>
 
-        {/* Language Selector */}
-        <div className="relative flex items-center bg-black/20 border border-white/10 rounded-full px-3 py-2 cursor-pointer hover:bg-black/30 transition-colors">
-          <Globe className="w-4 h-4 text-white/50 mr-2" />
+        {/* Language selector */}
+        <div className="relative flex items-center bg-black/20 border border-white/[0.06] rounded-[14px] px-3 py-2 
+          cursor-pointer transition-[background-color,border-color] duration-150 hover:bg-black/30 hover:border-white/10">
+          <Globe className="w-4 h-4 text-white/40 mr-2" strokeWidth={1.5} />
           <select 
             value={currentLang}
             onChange={(e) => onLangChange(e.target.value)}
-            className="appearance-none bg-transparent text-sm font-medium text-white/90 outline-none cursor-pointer pr-4"
+            className="appearance-none bg-transparent text-sm font-medium text-white/85 outline-none cursor-pointer pr-4"
           >
             {optionsToRender.map(opt => (
               <option key={opt.code} value={opt.code} className="bg-slate-900 text-white">

@@ -6,7 +6,6 @@ export default function HourlyTimeline({ hours = [], currentLang = 'en' }) {
 
   const formatTime = (dt_txt) => {
     if (!dt_txt) return "Now";
-    // dt_txt is typically "YYYY-MM-DD HH:mm:ss"
     const date = new Date(dt_txt.replace(' ', 'T') + 'Z');
     let h = date.getHours();
     const ampm = h >= 12 ? 'PM' : 'AM';
@@ -16,15 +15,21 @@ export default function HourlyTimeline({ hours = [], currentLang = 'en' }) {
   };
 
   return (
-    <div className="w-full mt-6">
-      <h3 className="text-white/80 font-semibold mb-3 px-1">{getTranslation(currentLang, 'today')}</h3>
-      <div className="flex overflow-x-auto hide-scrollbar gap-3 pb-2 w-full">
+    <div className="w-full mt-6 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
+      <h3 className="text-white/70 font-semibold text-sm mb-3 px-1 tracking-wide">
+        {getTranslation(currentLang, 'today')}
+      </h3>
+      <div className="flex overflow-x-auto hide-scrollbar gap-2.5 pb-2 w-full">
         {hours.map((hour, idx) => (
           <div 
             key={idx} 
-            className="flex flex-col items-center justify-between glass-panel bg-white/5 border border-white/5 rounded-2xl min-w-[70px] py-3 px-2 flex-shrink-0"
+            className="flex flex-col items-center justify-between
+              bg-white/[0.03] border border-white/[0.05]
+              rounded-[18px] min-w-[72px] py-3 px-2.5 flex-shrink-0
+              shadow-[0_1px_3px_rgba(0,0,0,0.12),0_4px_12px_rgba(0,0,0,0.06)]
+              transition-interactive hover:bg-white/[0.06] hover:border-white/[0.08]"
           >
-            <span className="text-xs text-white/70 font-medium">
+            <span className="text-[11px] text-white/55 font-medium tabular-nums">
               {formatTime(hour.dt_txt)}
             </span>
             
@@ -34,13 +39,14 @@ export default function HourlyTimeline({ hours = [], currentLang = 'en' }) {
                   src={`https://openweathermap.org/img/wn/${hour.icon}.png`}
                   alt={hour.description || "weather"}
                   className="w-8 h-8 object-contain"
+                  loading="lazy"
                 />
               ) : (
-                <div className="w-6 h-6 bg-white/20 rounded-full animate-pulse"></div>
+                <div className="w-6 h-6 bg-white/15 rounded-full animate-pulse"></div>
               )}
             </div>
             
-            <span className="text-sm font-bold text-white">
+            <span className="text-sm font-bold text-white tabular-nums">
               {hour.temp !== undefined ? Math.round(hour.temp) + '°' : '--'}
             </span>
           </div>
