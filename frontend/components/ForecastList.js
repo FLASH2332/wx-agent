@@ -1,6 +1,8 @@
 import React from 'react';
 
-export default function ForecastList({ days = [] }) {
+import { getTranslation } from '../lib/i18n';
+
+export default function ForecastList({ days = [], currentLang = 'en' }) {
   if (!days || days.length === 0) return null;
 
   return (
@@ -11,7 +13,7 @@ export default function ForecastList({ days = [] }) {
         {days.map((day, i) => {
           const iconUrl = day.icon ? `https://openweathermap.org/img/wn/${day.icon}.png` : null;
           const dateObj = new Date(day.date);
-          const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+          const dayName = dateObj.toLocaleDateString(currentLang, { weekday: 'short' });
           
           return (
             <div key={i} className="flex items-center justify-between text-sm">

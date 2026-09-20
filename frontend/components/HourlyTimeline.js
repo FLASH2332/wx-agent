@@ -1,6 +1,7 @@
 import React from 'react';
+import { getTranslation } from '../lib/i18n';
 
-export default function HourlyTimeline({ hours = [] }) {
+export default function HourlyTimeline({ hours = [], currentLang = 'en' }) {
   if (!hours || hours.length === 0) return null;
 
   const formatTime = (dt_txt) => {
@@ -16,7 +17,7 @@ export default function HourlyTimeline({ hours = [] }) {
 
   return (
     <div className="w-full mt-6">
-      <h3 className="text-white/80 font-semibold mb-3 px-1">Today</h3>
+      <h3 className="text-white/80 font-semibold mb-3 px-1">{getTranslation(currentLang, 'today')}</h3>
       <div className="flex overflow-x-auto hide-scrollbar gap-3 pb-2 w-full">
         {hours.map((hour, idx) => (
           <div 

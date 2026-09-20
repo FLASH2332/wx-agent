@@ -1,7 +1,8 @@
 import React from 'react';
 import { Droplets, Wind, ThermometerSun } from 'lucide-react';
+import { getTranslation } from '../lib/i18n';
 
-export default function WeatherCard({ weatherData }) {
+export default function WeatherCard({ weatherData, currentLang = 'en' }) {
   if (!weatherData || !weatherData.temp) return null;
 
   const { location, temp, feels_like, humidity, wind_speed, description, icon } = weatherData;
@@ -43,17 +44,17 @@ export default function WeatherCard({ weatherData }) {
           <div className="flex flex-col items-center">
             <ThermometerSun className="w-5 h-5 lg:w-6 lg:h-6 text-white/50 mb-1 lg:mb-2" />
             <span className="text-sm lg:text-base font-semibold">{Math.round(feels_like)}°</span>
-            <span className="text-[10px] lg:text-xs text-white/50 uppercase tracking-wider">Feels</span>
+            <span className="text-[10px] lg:text-xs text-white/50 uppercase tracking-wider">{getTranslation(currentLang, 'feelsLike')}</span>
           </div>
           <div className="flex flex-col items-center border-l border-white/10">
             <Droplets className="w-5 h-5 lg:w-6 lg:h-6 text-white/50 mb-1 lg:mb-2" />
             <span className="text-sm lg:text-base font-semibold">{humidity}%</span>
-            <span className="text-[10px] lg:text-xs text-white/50 uppercase tracking-wider">Humidity</span>
+            <span className="text-[10px] lg:text-xs text-white/50 uppercase tracking-wider">{getTranslation(currentLang, 'humidity')}</span>
           </div>
           <div className="flex flex-col items-center border-l border-white/10">
             <Wind className="w-5 h-5 lg:w-6 lg:h-6 text-white/50 mb-1 lg:mb-2" />
             <span className="text-sm lg:text-base font-semibold">{wind_speed} <span className="text-[10px]">m/s</span></span>
-            <span className="text-[10px] lg:text-xs text-white/50 uppercase tracking-wider">Wind</span>
+            <span className="text-[10px] lg:text-xs text-white/50 uppercase tracking-wider">{getTranslation(currentLang, 'wind')}</span>
           </div>
         </div>
       </div>

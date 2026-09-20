@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Globe } from 'lucide-react';
+import { getTranslation } from '../lib/i18n';
 
 const GREETINGS = {
   en: "Good Day",
@@ -22,6 +23,12 @@ const LANG_OPTIONS = [
 export default function TopBar({ currentLang, onLangChange, onLocationSearch }) {
   const [searchInput, setSearchInput] = useState('');
   const greeting = GREETINGS[currentLang] || GREETINGS['en'];
+  
+  // Dynamically add the current language if it's not in the default list
+  const hasCurrentLang = LANG_OPTIONS.some(opt => opt.code === currentLang);
+  const optionsToRender = hasCurrentLang 
+    ? LANG_OPTIONS 
+    : [...LANG_OPTIONS, { code: currentLang, label: `Detected (${currentLang})` }];
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -35,7 +42,7 @@ export default function TopBar({ currentLang, onLangChange, onLocationSearch }) 
     <header className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 w-full glass-panel bg-white/5 px-6 py-4 rounded-3xl border-white/10 shadow-lg">
       <div className="flex items-center gap-2">
         <h1 className="text-2xl font-bold tracking-tight text-white/90">
-          {greeting}! <span className="text-xl font-normal text-white/60 ml-2">Weather Buddy</span>
+          {greeting}! <span className="text-xl font-normal text-white/60 ml-2">{getTranslation(currentLang, 'weatherBuddy')}</span>
         </h1>
       </div>
 
@@ -45,7 +52,7 @@ export default function TopBar({ currentLang, onLangChange, onLocationSearch }) 
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
           <input 
             type="text"
-            placeholder="Search location..."
+            placeholder={getTranslation(currentLang, 'searchPlaceholder')}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             className="w-full bg-black/20 border border-white/10 rounded-full py-2 pl-9 pr-4 text-sm text-white placeholder:text-white/40 focus:outline-none focus:border-white/30 transition-colors"
@@ -60,7 +67,7 @@ export default function TopBar({ currentLang, onLangChange, onLocationSearch }) 
             onChange={(e) => onLangChange(e.target.value)}
             className="appearance-none bg-transparent text-sm font-medium text-white/90 outline-none cursor-pointer pr-4"
           >
-            {LANG_OPTIONS.map(opt => (
+            {optionsToRender.map(opt => (
               <option key={opt.code} value={opt.code} className="bg-slate-900 text-white">
                 {opt.label}
               </option>
