@@ -1,3 +1,6 @@
+let gdacsCache = null;
+let gdacsCacheTime = 0;
+
 export default async function handler(req, res) {
   const { lat, lon, country } = req.query;
   
@@ -20,10 +23,22 @@ export default async function handler(req, res) {
         return res.status(200).json({ alerts });
       }
     } else {
-      // GDACS XML fetch
-      const gdacsRes = await fetch("https://www.gdacs.org/xml/rss.xml");
-      if (gdacsRes.ok) {
-        const xml = await gdacsRes.text();
+      // GDACS XML fetch with 5-minute in-memory cache
+      const now = Date.now();
+      let xml = null;
+      
+      if (gdacsCache && (now - gdacsCacheTime < 5 * 60 * 1000)) {
+        xml = gdacsCache;
+      } else {
+        const gdacsRes = await fetch("https://www.gdacs.org/xml/rss.xml");
+        if (gdacsRes.ok) {
+          xml = await gdacsRes.text();
+          gdacsCache = xml;
+          gdacsCacheTime = now;
+        }
+      }
+      
+      if (xml) {
         // Simple regex parse since we don't have xml2js
         const items = xml.split('<item>').slice(1);
         const alerts = [];
