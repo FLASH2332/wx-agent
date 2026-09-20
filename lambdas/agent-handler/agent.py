@@ -1,14 +1,21 @@
 """Strands agent setup for Weather Buddy.
 
-The Bedrock model client is built once at module level (rule 4). A fresh Agent is
-created per request, seeded with the frontend-owned conversation history, so the
-updated history can be read back out and returned (rules 15-16).
+The LLM is reached through LiteLLM, configured entirely from env vars so the
+provider/model can be swapped without code changes — just change the three env
+vars below. LiteLLM routes by the model-id prefix, for example:
+  - openai/<model>  + LLM_BASE_URL  -> a self-hosted OpenAI-compatible endpoint
+                                        (Ollama on EC2), LLM_API_KEY="ollama"
+  - groq/<model>                    -> Groq (LLM_BASE_URL left empty)
+  - anthropic/<model>, bedrock/<model>, gpt-4o, ...
+
+The model is built lazily and cached; a fresh Agent is created per request,
+seeded with the frontend-owned conversation history (rules 15-16).
 """
 
 import os
 
 from strands import Agent
-from strands.models import BedrockModel
+from strands.models.litellm import LiteLLMModel
 
 from prompts import SYSTEM_PROMPT
 from tools import (
@@ -18,38 +25,26 @@ from tools import (
     get_forecast,
 )
 
-AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
-# Provider is Bedrock by default (the pinned production path). Set MODEL_PROVIDER=groq
-# to run the same agent/tools against Groq's OpenAI-compatible API for local testing.
 _cached_model = None
 
 TOOLS = [get_current_weather, get_forecast, get_alerts, activity_advisor]
 
 
 def _build_model():
-    """Construct the LLM model object for the configured provider.
-
-    Only this object differs between providers; the agent loop and tools are
-    identical either way.
-    """
-    provider = os.environ.get("MODEL_PROVIDER", "bedrock").lower()
-    if provider == "groq":
-        from strands.models.openai import OpenAIModel
-
-        return OpenAIModel(
-            client_args={
-                "api_key": os.environ["GROQ_API_KEY"],
-                "base_url": "https://api.groq.com/openai/v1",
-            },
-            model_id=os.environ.get("GROQ_MODEL_ID", "llama-3.3-70b-versatile"),
-        )
-    return BedrockModel(
-        region_name=AWS_REGION, model_id=os.environ["BEDROCK_MODEL_ID"]
-    )
+    """Construct the LiteLLM model from env. Only this object differs between
+    providers; the agent loop and tools are identical either way."""
+    client_args = {}
+    api_key = os.environ.get("LLM_API_KEY", "")
+    base_url = os.environ.get("LLM_BASE_URL", "")
+    if api_key:
+        client_args["api_key"] = api_key
+    if base_url:
+        client_args["api_base"] = base_url
+    return LiteLLMModel(client_args=client_args, model_id=os.environ["LLM_MODEL_ID"])
 
 
 def get_model():
-    """Construct or return the LLM model object for the configured provider."""
+    """Construct or return the cached LLM model object."""
     global _cached_model
     if _cached_model is None:
         _cached_model = _build_model()
