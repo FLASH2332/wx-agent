@@ -192,12 +192,17 @@ export default function Home() {
               {latestResponse}
             </div>
           ) : null}
+          {/* Audio only appears with a fresh spoken reply, then fades with the turn */}
+          {latestAudio && (
+            <div className="self-start">
+              <AudioPlayer audioBase64={latestAudio} autoPlay={true} />
+            </div>
+          )}
         </div>
       )}
 
       <div className="flex items-center gap-2 w-full">
         <div className="flex-1 min-w-0 flex flex-col">
-          <AudioPlayer audioBase64={latestAudio} autoPlay={true} />
           <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} appState={appState} currentLang={selectedLang} />
         </div>
         {messages.length > 0 && (
