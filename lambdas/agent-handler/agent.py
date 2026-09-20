@@ -21,7 +21,7 @@ from tools import (
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 # Provider is Bedrock by default (the pinned production path). Set MODEL_PROVIDER=groq
 # to run the same agent/tools against Groq's OpenAI-compatible API for local testing.
-MODEL_PROVIDER = os.environ.get("MODEL_PROVIDER", "bedrock").lower()
+_cached_model = None
 
 TOOLS = [get_current_weather, get_forecast, get_alerts, activity_advisor]
 
@@ -32,7 +32,8 @@ def _build_model():
     Only this object differs between providers; the agent loop and tools are
     identical either way.
     """
-    if MODEL_PROVIDER == "groq":
+    provider = os.environ.get("MODEL_PROVIDER", "bedrock").lower()
+    if provider == "groq":
         from strands.models.openai import OpenAIModel
 
         return OpenAIModel(
@@ -47,7 +48,12 @@ def _build_model():
     )
 
 
-MODEL = _build_model()
+def get_model():
+    """Construct or return the LLM model object for the configured provider."""
+    global _cached_model
+    if _cached_model is None:
+        _cached_model = _build_model()
+    return _cached_model
 
 
 def _extract_text(message):
@@ -118,20 +124,30 @@ def latest_forecast_data(messages):
     return found
 
 
-def run_agent(text, messages=None):
+def run_agent(text, messages=None, user_lang="en", context_location=None):
     """Run one turn against English `text`, returning (response_text, updated_messages).
 
     `messages` is the Bedrock Converse-format history owned by the frontend. The
     returned history includes the new user turn and assistant turn(s).
     """
+    prompt = SYSTEM_PROMPT
+    
+    # Map the language code to a full language name for the LLM prompt
+    LANG_MAP = {
+        "en": "English", "hi": "Hindi", "fr": "French", 
+        "de": "German", "es": "Spanish", "ta": "Tamil"
+    }
+    lang_name = LANG_MAP.get(user_lang, "English")
+    
+    prompt += f"\n\nIMPORTANT INSTRUCTION: You must ALWAYS respond in {lang_name}."
+    if context_location:
+        prompt += f"\n\nContext: The user is currently viewing the dashboard for {context_location}. If they ask a question without specifying a location, assume they mean {context_location}."
+        
     agent = Agent(
-        model=MODEL,
+        model=get_model(),
         tools=TOOLS,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=prompt,
         messages=list(messages or []),
-        # No console streaming: this runs in Lambda, and the default printing
-        # handler would stream tokens to stdout (noise in CloudWatch, and it
-        # crashes on non-cp1252 characters when run on a Windows console).
         callback_handler=None,
     )
     result = agent(text)

@@ -7,10 +7,10 @@ import SkeletonCard from '@/components/SkeletonCard';
 import HourlyTimeline from '@/components/HourlyTimeline';
 import ForecastList from '@/components/ForecastList';
 import AlertBanner from '@/components/AlertBanner';
-import ResponseBubble from '@/components/ResponseBubble';
 import ChatHistory from '@/components/ChatHistory';
 import AudioPlayer from '@/components/AudioPlayer';
 import ErrorToast from '@/components/ErrorToast';
+import SuggestionChips from '@/components/SuggestionChips';
 import { queryAgent, fetchInstantWeather } from '@/lib/api';
 
 export default function Home() {
@@ -67,15 +67,20 @@ export default function Home() {
     }
   }, []);
 
-  const handleQuery = async (text, isSilentLocationUpdate = false) => {
+  const handleQuery = async (text, isSilentLocationUpdate = false, detectedLang = null) => {
     if (!text.trim()) return;
     
-    // Immediately append user message to local state for instant visual feedback
+    let activeLang = detectedLang || selectedLang;
+    if (detectedLang && detectedLang !== selectedLang) {
+      setSelectedLang(detectedLang);
+    }
+    
+    // Create optimistic user message for instant UI render
     const userMsg = { role: 'user', content: [{ text: text.trim() }] };
-    const updatedMessages = [...messages, userMsg];
+    const currentMessages = messages;
     
     if (!isSilentLocationUpdate) {
-      setMessages(updatedMessages);
+      setMessages([...currentMessages, userMsg]);
       setLatestResponse("");
       setLatestAudio("");
     }
@@ -84,22 +89,38 @@ export default function Home() {
     setErrorMsg("");
     
     try {
-      const response = await queryAgent(text, selectedLang, updatedMessages);
+      // Pass existing messages to backend (Strands agent(text) appends the user turn automatically)
+      const contextLocation = weatherData?.location || null;
+      const response = await queryAgent(text, activeLang, currentMessages, contextLocation);
       
-      setMessages(response.messages || updatedMessages);
+      setMessages(response.messages || [...currentMessages, userMsg]);
       
       if (!isSilentLocationUpdate) {
         setLatestResponse(response.response_text || "");
         setLatestAudio(response.audio_b64 || "");
       }
       
-      if (response.weather_data && Object.keys(response.weather_data).length > 0) {
-        setWeatherData(response.weather_data);
-      }
+      let newLocation = response.weather_data?.location || response.forecast_data?.location;
       
-      if (response.forecast_data) {
-        setForecastDays(response.forecast_data.days || []);
-        setForecastHourly(response.forecast_data.hourly || []);
+      if (newLocation) {
+        try {
+          const syncData = await fetchInstantWeather(newLocation);
+          setWeatherData(syncData.weather_data);
+          if (syncData.forecast_data) {
+            setForecastDays(syncData.forecast_data.days || []);
+            setForecastHourly(syncData.forecast_data.hourly || []);
+          }
+          if (syncData.alerts) setAlerts(syncData.alerts);
+        } catch(e) {
+          console.warn("Silent sync failed", e);
+          if (response.weather_data && Object.keys(response.weather_data).length > 0) {
+            setWeatherData(response.weather_data);
+          }
+          if (response.forecast_data) {
+            setForecastDays(response.forecast_data.days || []);
+            setForecastHourly(response.forecast_data.hourly || []);
+          }
+        }
       }
       
       setAppState('result');
@@ -158,8 +179,9 @@ export default function Home() {
           )}
           
           {appState === 'idle' && !weatherData && (
-            <div className="flex items-center justify-center h-64 border-2 border-dashed border-white/10 rounded-3xl glass-panel">
-              <p className="text-white/40 font-medium">Ask Weather Buddy for a forecast...</p>
+            <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-white/10 rounded-3xl glass-panel p-6">
+              <p className="text-white/40 font-medium mb-4">Ask Weather Buddy for a forecast...</p>
+              <SuggestionChips onSelect={(text) => handleQuery(text, false)} />
             </div>
           )}
         </div>
@@ -176,8 +198,8 @@ export default function Home() {
           
           {/* Chat log wrapper floating above mic */}
           {(messages.length > 0 || appState === 'processing') && (
-            <div className="w-full max-w-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-3xl p-4 mb-4 shadow-2xl max-h-[40vh] flex flex-col">
-              <div className="overflow-y-auto hide-scrollbar flex-1">
+            <div className="w-full max-w-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-3xl p-4 mb-4 shadow-2xl max-h-48 flex flex-col">
+              <div className="overflow-y-auto hide-scrollbar flex-1 pr-2">
                 <ChatHistory messages={messages} currentLang={selectedLang} />
                 {appState === 'processing' && (
                   <div className="flex justify-start my-2">
@@ -194,7 +216,7 @@ export default function Home() {
           
           <div className="flex flex-col items-center w-full max-w-2xl relative z-50">
             <AudioPlayer audioBase64={latestAudio} autoPlay={true} />
-            <VoiceInput onTranscript={(text) => handleQuery(text, false)} appState={appState} />
+            <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} appState={appState} currentLang={selectedLang} />
           </div>
         </div>
       </div>

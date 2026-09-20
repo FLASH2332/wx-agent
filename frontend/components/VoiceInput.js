@@ -4,62 +4,89 @@ import { Mic, Send, Square } from 'lucide-react';
 export default function VoiceInput({ onTranscript, appState }) {
   const [isSupported, setIsSupported] = useState(true);
   const [isListening, setIsListening] = useState(false);
-  const [interimText, setInterimText] = useState("");
   const [textInput, setTextInput] = useState("");
+  const [isTranscribing, setIsTranscribing] = useState(false);
   
-  const recognitionRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   useEffect(() => {
-    // Feature check
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setIsSupported(false);
-      return;
     }
+  }, []);
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US'; // We could dynamically set this based on previous turns
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
-    recognition.onstart = () => setIsListening(true);
-    
-    recognition.onresult = (event) => {
-      let finalStr = '';
-      let interimStr = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalStr += event.results[i][0].transcript;
-        } else {
-          interimStr += event.results[i][0].transcript;
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
         }
-      }
-      setInterimText(interimStr);
-      if (finalStr) {
-        onTranscript(finalStr);
-        setInterimText("");
-      }
-    };
+      };
 
-    recognition.onerror = (event) => {
-      console.error("Speech recognition error", event.error);
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        stream.getTracks().forEach(track => track.stop());
+        await handleTranscription(audioBlob);
+      };
+
+      mediaRecorder.start();
+      setIsListening(true);
+    } catch (err) {
+      console.error("Error accessing mic:", err);
+      setIsSupported(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
       setIsListening(false);
-      setInterimText("");
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      setInterimText("");
-    };
-
-    recognitionRef.current = recognition;
-  }, [onTranscript]);
+    }
+  };
 
   const toggleListen = () => {
     if (isListening) {
-      recognitionRef.current?.stop();
+      stopRecording();
     } else {
-      recognitionRef.current?.start();
+      startRecording();
+    }
+  };
+
+  const handleTranscription = async (audioBlob) => {
+    setIsTranscribing(true);
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      reader.onloadend = async () => {
+        const base64Audio = reader.result.split(',')[1];
+        
+        const API_URL = process.env.NEXT_PUBLIC_API_URL;
+        const baseUrl = API_URL.replace('/query', '');
+        const res = await fetch(`${baseUrl}/transcribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio_b64: base64Audio })
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          if (data.text) {
+             onTranscript(data.text.trim(), data.language);
+          }
+        } else {
+          console.error("Transcription failed", await res.text());
+        }
+        setIsTranscribing(false);
+      };
+    } catch (err) {
+      console.error("Transcription error:", err);
+      setIsTranscribing(false);
     }
   };
 
@@ -77,9 +104,9 @@ export default function VoiceInput({ onTranscript, appState }) {
 
   return (
     <div className="w-full flex flex-col items-center mt-4 mb-2 pb-4">
-      {/* Interim text display */}
+      {/* Transcribing text display */}
       <div className="h-6 mb-2 text-center">
-        {interimText && <span className="text-white/70 italic text-sm">{interimText}</span>}
+        {isTranscribing && <span className="text-white/70 italic text-sm">Transcribing...</span>}
       </div>
 
       <div className="relative flex justify-center items-center w-full max-w-2xl group">
@@ -123,7 +150,7 @@ export default function VoiceInput({ onTranscript, appState }) {
                 `}
                 aria-label={isListening ? "Stop listening" : "Start voice input"}
               >
-                {isProcessing ? (
+                {isProcessing || isTranscribing ? (
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 ) : isListening ? (
                   <Square className="w-5 h-5 fill-current" />
