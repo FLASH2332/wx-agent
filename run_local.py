@@ -142,6 +142,39 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
 
+        elif self.path.endswith("/sync"):
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(content_length))
+            location = body.get("location")
+            lang = body.get("lang", "en")
+            
+            from tools import _current_weather_data, _forecast_data, LocationNotFoundError
+            try:
+                if not location:
+                    raise Exception("Missing location")
+                weather_data = _current_weather_data(location, "metric", lang)
+                forecast_data = _forecast_data(location, 5, "metric", lang)
+                self.send_response(200)
+                for k, v in CORS_HEADERS.items():
+                    self.send_header(k, v)
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "weather_data": weather_data,
+                    "forecast_data": forecast_data
+                }).encode("utf-8"))
+            except LocationNotFoundError as e:
+                self.send_response(404)
+                for k, v in CORS_HEADERS.items():
+                    self.send_header(k, v)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                for k, v in CORS_HEADERS.items():
+                    self.send_header(k, v)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+
         else:
             self.send_response(404)
             self.end_headers()

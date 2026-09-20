@@ -122,25 +122,46 @@ async function fetchWeatherFromOpenMeteo(latitude, longitude, name, country) {
   };
 }
 
-export async function fetchInstantWeather(location) {
-  const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1`);
-  const geoData = await geoRes.json();
-  if (!geoData.results || geoData.results.length === 0) {
-    throw new Error("Location not found");
+export async function fetchInstantWeather(location, lang = "en") {
+  const syncUrl = API_URL.replace('/query', '/sync');
+  const res = await fetch(syncUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ location, lang }),
+  });
+  if (!res.ok) throw new Error("Sync failed");
+  
+  // Also try to fetch alerts for the location
+  let alerts = [];
+  try {
+    const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1`);
+    const geoData = await geoRes.json();
+    if (geoData.results && geoData.results.length > 0) {
+      const { latitude, longitude, country } = geoData.results[0];
+      const alertRes = await fetch(`/api/alerts?lat=${latitude}&lon=${longitude}&country=${country || ''}`);
+      if (alertRes.ok) {
+        const alertData = await alertRes.json();
+        alerts = alertData.alerts || [];
+      }
+    }
+  } catch (e) {
+    console.error("Failed to fetch alerts", e);
   }
-  const { latitude, longitude, name, country } = geoData.results[0];
-  return fetchWeatherFromOpenMeteo(latitude, longitude, name, country);
+
+  const data = await res.json();
+  return {
+    ...data,
+    alerts
+  };
 }
 
-export async function fetchInstantWeatherByCoords(latitude, longitude) {
+export async function fetchInstantWeatherByCoords(latitude, longitude, lang = "en") {
   // Reverse geocode to get city name
-  const geoRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`);
+  const geoRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=${lang}`);
   let name = "Current Location";
-  let country = "";
   if (geoRes.ok) {
     const geoData = await geoRes.json();
     name = geoData.city || geoData.locality || "Current Location";
-    country = geoData.countryCode || "";
   }
-  return fetchWeatherFromOpenMeteo(latitude, longitude, name, country);
+  return fetchInstantWeather(name, lang);
 }

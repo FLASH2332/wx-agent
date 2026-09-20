@@ -91,6 +91,11 @@ Resources:
           Properties:
             Path: /transcribe
             Method: post
+        Sync:
+          Type: Api
+          Properties:
+            Path: /sync
+            Method: post
 
 Outputs:
   ApiUrl:

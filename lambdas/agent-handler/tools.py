@@ -145,9 +145,7 @@ def _extract_hourly(entries, count=8):
     return hourly
 
 
-@tool
-def get_forecast(location: str, days: int = 3, units: str = "metric", lang: str = "en") -> dict:
-    """Get a multi-day daily weather forecast (high/low, conditions) for a location."""
+def _forecast_data(location, days=5, units="metric", lang="en"):
     lat, lon, display, _ = _geocode(location)
     payload = _http_get_json(
         FORECAST_URL, {"lat": lat, "lon": lon, "units": units, "lang": lang, "appid": OWM_API_KEY}
@@ -159,6 +157,12 @@ def get_forecast(location: str, days: int = 3, units: str = "metric", lang: str 
         "hourly": _extract_hourly(payload.get("list") or []),
         "days": _summarize_forecast_days(payload.get("list") or [], max_days),
     }
+
+
+@tool
+def get_forecast(location: str, days: int = 3, units: str = "metric", lang: str = "en") -> dict:
+    """Get a multi-day daily weather forecast (high/low, conditions) for a location."""
+    return _forecast_data(location, days, units, lang)
 
 
 def _fetch_nws_alerts(lat, lon):

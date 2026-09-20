@@ -67,6 +67,26 @@ export default function Home() {
     }
   }, []);
 
+  const handleLangChange = async (newLang) => {
+    setSelectedLang(newLang);
+    if (weatherData?.location) {
+      setAppState('processing');
+      try {
+        const syncData = await fetchInstantWeather(weatherData.location, newLang);
+        setWeatherData(syncData.weather_data);
+        if (syncData.forecast_data) {
+          setForecastDays(syncData.forecast_data.days || []);
+          setForecastHourly(syncData.forecast_data.hourly || []);
+        }
+        if (syncData.alerts) setAlerts(syncData.alerts);
+        setAppState('result');
+      } catch (e) {
+        console.error("Language sync failed", e);
+        setAppState('idle');
+      }
+    }
+  };
+
   const handleQuery = async (text, isSilentLocationUpdate = false, detectedLang = null) => {
     if (!text.trim()) return;
     
@@ -104,7 +124,8 @@ export default function Home() {
       
       if (newLocation) {
         try {
-          const syncData = await fetchInstantWeather(newLocation);
+          // Sync with the backend to ensure perfectly localized current & forecast data
+          const syncData = await fetchInstantWeather(newLocation, activeLang);
           setWeatherData(syncData.weather_data);
           if (syncData.forecast_data) {
             setForecastDays(syncData.forecast_data.days || []);
@@ -134,7 +155,7 @@ export default function Home() {
   const handleManualLocation = async (location) => {
     try {
       setAppState('processing');
-      const data = await fetchInstantWeather(location);
+      const data = await fetchInstantWeather(location, selectedLang);
       
       setWeatherData(data.weather_data);
       if (data.forecast_data) {
@@ -157,7 +178,7 @@ export default function Home() {
       
       <TopBar 
         currentLang={selectedLang} 
-        onLangChange={setSelectedLang} 
+        onLangChange={handleLangChange} 
         onLocationSearch={handleManualLocation} 
       />
 

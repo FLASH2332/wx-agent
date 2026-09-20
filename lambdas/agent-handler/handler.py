@@ -60,10 +60,29 @@ def handler(event, context=None):
     path = event.get("path", "")
     
     # ---------------------------------------------------------
+    if path.endswith("/sync"):
+        try:
+            body = _parse_body(event)
+            location = body.get("location")
+            lang = body.get("lang", "en")
+            if not location:
+                return _response(400, {"error": "Missing location"})
+            
+            from tools import _current_weather_data, _forecast_data
+            weather_data = _current_weather_data(location, "metric", lang)
+            forecast_data = _forecast_data(location, 5, "metric", lang)
+            return _response(200, {
+                "weather_data": weather_data,
+                "forecast_data": forecast_data
+            })
+        except LocationNotFoundError as e:
+            return _response(404, {"error": str(e)})
+        except Exception as e:
+            return _response(500, {"error": str(e)})
+
     # Route: /transcribe
     # ---------------------------------------------------------
     if path.endswith("/transcribe"):
-        try:
             body = _parse_body(event)
             audio_b64 = body.get("audio_b64")
             if not audio_b64:
