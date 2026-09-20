@@ -131,7 +131,7 @@ def handler(event, context=None):
     try:
         final_text, updated_messages = run_agent(text, messages, user_lang=user_lang, context_location=context_location)
 
-        audio_b64 = _synthesize(final_text, user_lang)
+        audio_b64 = ""  # TTS disabled; call _synthesize(final_text, user_lang) to re-enable
         weather_data = latest_weather_data(updated_messages)
         forecast_data = latest_forecast_data(updated_messages)
 
