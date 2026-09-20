@@ -116,6 +116,10 @@ def run_agent(text, messages=None):
         tools=TOOLS,
         system_prompt=SYSTEM_PROMPT,
         messages=list(messages or []),
+        # No console streaming: this runs in Lambda, and the default printing
+        # handler would stream tokens to stdout (noise in CloudWatch, and it
+        # crashes on non-cp1252 characters when run on a Windows console).
+        callback_handler=None,
     )
     result = agent(text)
     return _extract_text(result.message), agent.messages
