@@ -70,22 +70,23 @@ export default function Home() {
   const handleQuery = async (text, isSilentLocationUpdate = false) => {
     if (!text.trim()) return;
     
-    setAppState('processing');
-    setErrorMsg("");
-    // If it's just a manual location change, we might not clear the old response until the new one arrives
+    // Immediately append user message to local state for instant visual feedback
+    const userMsg = { role: 'user', content: [{ text: text.trim() }] };
+    const updatedMessages = [...messages, userMsg];
+    
     if (!isSilentLocationUpdate) {
+      setMessages(updatedMessages);
       setLatestResponse("");
       setLatestAudio("");
     }
     
+    setAppState('processing');
+    setErrorMsg("");
+    
     try {
-      const response = await queryAgent(text, selectedLang, messages);
+      const response = await queryAgent(text, selectedLang, updatedMessages);
       
-      setMessages(response.messages || []);
-      
-      // If the backend detected a language and we were in 'en', we COULD update it, 
-      // but since the user explicitly wants manual selection to drive this, 
-      // we won't overwrite their manual dropdown choice if they set one.
+      setMessages(response.messages || updatedMessages);
       
       if (!isSilentLocationUpdate) {
         setLatestResponse(response.response_text || "");
@@ -174,10 +175,18 @@ export default function Home() {
         <div className="max-w-4xl mx-auto w-full flex flex-col items-center pointer-events-auto relative">
           
           {/* Chat log wrapper floating above mic */}
-          {messages.length > 0 && (
-            <div className="w-full max-w-2xl bg-black/40 backdrop-blur-md border border-white/5 rounded-3xl p-4 mb-4 shadow-2xl max-h-[40vh] flex flex-col">
+          {(messages.length > 0 || appState === 'processing') && (
+            <div className="w-full max-w-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-3xl p-4 mb-4 shadow-2xl max-h-[40vh] flex flex-col">
               <div className="overflow-y-auto hide-scrollbar flex-1">
-                <ChatHistory messages={messages} />
+                <ChatHistory messages={messages} currentLang={selectedLang} />
+                {appState === 'processing' && (
+                  <div className="flex justify-start my-2">
+                    <div className="glass-panel bg-white/10 text-white/70 px-4 py-2 rounded-2xl rounded-tl-sm border border-white/10 text-sm animate-pulse flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-ping" />
+                      <span>Weather Buddy is thinking...</span>
+                    </div>
+                  </div>
+                )}
                 <div ref={endOfChatRef} className="h-2" />
               </div>
             </div>
