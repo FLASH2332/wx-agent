@@ -1,25 +1,37 @@
 import React from 'react';
+import { DEFAULT_SKY } from '../lib/skyTheme';
 
-export default function AppShell({ children, appState }) {
+export default function AppShell({ children, footer, banner, sky = DEFAULT_SKY }) {
   return (
-    <div className="min-h-screen w-full bg-slate-950 text-slate-50 font-sans selection:bg-blue-500/30 relative overflow-x-hidden">
-      {/* Subtle dot-grid — opacity lowered for depth without noise */}
-      <div 
-        className="absolute inset-0 pointer-events-none z-0 opacity-[0.25]" 
-        style={{ 
-          backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px)', 
-          backgroundSize: '28px 28px' 
-        }} 
+    <div
+      className="h-screen w-full text-slate-50 font-sans selection:bg-white/20 relative overflow-hidden flex flex-col"
+      style={{ background: sky.gradient, transition: 'background 900ms cubic-bezier(0.2,0,0,1)' }}
+    >
+      {/* Celestial glow — the sun or moon, tinted by the current sky */}
+      <div
+        className="absolute -top-32 right-[8%] w-[46vw] max-w-[560px] h-[46vw] max-h-[560px] rounded-full pointer-events-none z-0"
+        style={{ background: `radial-gradient(circle, ${sky.glow} 0%, transparent 70%)`, transition: 'background 900ms ease' }}
       />
-      
-      {/* Top-left ambient glow — grounds the eye on page load */}
-      <div className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full bg-blue-600/[0.06] blur-[120px] pointer-events-none z-0" />
-      
-      <main className="w-full max-w-7xl mx-auto px-4 py-6 md:px-8 md:py-8 flex flex-col min-h-screen relative z-10">
-        <div className="relative z-10 flex flex-col flex-grow stagger-children">
+      {/* Horizon haze — a soft brightening toward the bottom, like distant light */}
+      <div className="absolute inset-x-0 bottom-0 h-1/3 pointer-events-none z-0"
+        style={{ background: 'linear-gradient(0deg, rgba(255,255,255,0.05), transparent)' }}
+      />
+
+      {banner && <div className="relative z-20 shrink-0">{banner}</div>}
+
+      {/* Scrollable content — always above the footer, never behind it */}
+      <main className="flex-1 min-h-0 overflow-y-auto hide-scrollbar relative z-10">
+        <div className="w-full max-w-6xl mx-auto px-5 pt-6 pb-10 md:px-8 md:pt-8 flex flex-col">
           {children}
         </div>
       </main>
+
+      {/* Docked input — flex-none, structurally below the content */}
+      {footer && (
+        <div className="relative z-30 shrink-0 border-t border-white/10 bg-black/25 backdrop-blur-2xl">
+          {footer}
+        </div>
+      )}
     </div>
   );
 }

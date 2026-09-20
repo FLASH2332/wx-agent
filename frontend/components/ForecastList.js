@@ -5,11 +5,10 @@ export default function ForecastList({ days = [], currentLang = 'en' }) {
   if (!days || days.length === 0) return null;
 
   return (
-    <div className="mt-4 bg-white/[0.03] border border-white/[0.06] rounded-[24px] p-5 
-      shadow-[0_2px_4px_rgba(0,0,0,0.12),0_8px_24px_rgba(0,0,0,0.08)]
+    <div className="bg-white/[0.06] border border-white/10 rounded-[24px] p-5 backdrop-blur-md
       animate-fade-in-up" style={{ animationDelay: '200ms' }}>
-      <h3 className="text-[11px] font-semibold text-white/40 uppercase tracking-widest mb-4">
-        5-Day Forecast
+      <h3 className="text-sm font-medium text-white/60 mb-4">
+        Next 5 days
       </h3>
       
       <div className="flex flex-col gap-3">
