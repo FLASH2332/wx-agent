@@ -9,7 +9,6 @@ import HourlyTimeline from '@/components/HourlyTimeline';
 import ForecastList from '@/components/ForecastList';
 import AlertBanner from '@/components/AlertBanner';
 import ChatHistory from '@/components/ChatHistory';
-import AudioPlayer from '@/components/AudioPlayer';
 import ErrorToast from '@/components/ErrorToast';
 import SuggestionChips from '@/components/SuggestionChips';
 import { queryAgent, fetchInstantWeather } from '@/lib/api';
@@ -25,7 +24,6 @@ export default function Home() {
   
   const [messages, setMessages] = useState([]);
   const [latestResponse, setLatestResponse] = useState("");
-  const [latestAudio, setLatestAudio] = useState("");
 
   // Explicit language state (overrides auto-detection for subsequent turns)
   const [selectedLang, setSelectedLang] = useState("en");
@@ -100,7 +98,6 @@ export default function Home() {
       
       if (!isSilentLocationUpdate) {
         setLatestResponse(response.response_text || "");
-        setLatestAudio(response.audio_b64 || "");
       }
       
       let newLocation = response.weather_data?.location || response.forecast_data?.location;
@@ -185,11 +182,6 @@ export default function Home() {
                   <span className="w-1.5 h-1.5 bg-white/70 rounded-full animate-ping" />
                   Weather Buddy is thinking…
                 </div>
-              </div>
-            )}
-            {latestAudio && (
-              <div className="mt-2">
-                <AudioPlayer audioBase64={latestAudio} autoPlay={true} />
               </div>
             )}
             <div ref={endOfChatRef} className="h-1" />
