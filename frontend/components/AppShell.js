@@ -17,7 +17,7 @@ export default function AppShell({ children, footer, banner, sky = DEFAULT_SKY }
         style={{ background: 'linear-gradient(0deg, rgba(255,255,255,0.05), transparent)' }}
       />
 
-      {banner && <div className="relative z-20 shrink-0">{banner}</div>}
+      {banner && <div className="relative z-20 shrink-0 flex justify-center px-4 pt-3">{banner}</div>}
 
       {/* Scrollable content — always above the footer, never behind it */}
       <main className="flex-1 min-h-0 overflow-y-auto hide-scrollbar relative z-10">
