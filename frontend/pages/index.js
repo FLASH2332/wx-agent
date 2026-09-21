@@ -83,7 +83,6 @@ export default function Home() {
     if (!isSilentLocationUpdate) {
       setMessages([...currentMessages, userMsg]);
       setLatestResponse("");
-      setLatestAudio("");
     }
 
     setAppState('processing');
