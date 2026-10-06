@@ -9,6 +9,14 @@ Parameters:
     Type: String
     NoEcho: true
     Description: OpenWeatherMap API key (free tier, v2.5 endpoints).
+  AlertLocation:
+    Type: String
+    Default: "Chennai, IN"
+    Description: Location to check for weather alerts in daily briefings.
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Email address to receive daily weather alert notifications (leave empty to skip).
   LlmModelId:
     Type: String
     Default: groq/llama-3.1-8b-instant
@@ -47,11 +55,7 @@ Resources:
       CodeUri: lambdas/tts-handler/
       Handler: handler.handler
       Description: Synthesizes speech with Amazon Polly; invoked by the agent.
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action: polly:SynthesizeSpeech
-              Resource: "*"
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
 
   AgentFunction:
     Type: AWS::Serverless::Function
@@ -77,13 +81,7 @@ Resources:
           # Only /tmp is writable on Lambda; point HOME there in case a library
           # tries to write a cache/config at import time.
           HOME: /tmp
-      Policies:
-        # Multilingual + STT are handled by Groq (external HTTPS), so no Comprehend
-        # or Translate permissions are needed — only invoking the TTS Lambda.
-        - Statement:
-            - Effect: Allow
-              Action: lambda:InvokeFunction
-              Resource: !GetAtt TtsFunction.Arn
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
       FunctionUrlConfig:
         AuthType: NONE
         Cors:
@@ -105,6 +103,44 @@ Resources:
             Path: /transcribe
             Method: post
 
+  # ── Proactive alerting ──────────────────────────────────────────────────────
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: weather-buddy-alerts
+      Subscription:
+        - !If
+          - HasAlertEmail
+          - Protocol: email
+            Endpoint: !Ref AlertEmail
+          - !Ref AWS::NoValue
+
+  AlertFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: lambdas/alert-handler/
+      Handler: handler.handler
+      Description: Checks weather alerts for the configured location and publishes to SNS.
+      Timeout: 30
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      Environment:
+        Variables:
+          OWM_API_KEY: !Ref OwmApiKey
+          ALERT_LOCATION: !Ref AlertLocation
+          SNS_TOPIC_ARN: !Ref AlertTopic
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(30 1 * * ? *)   # 7:00 AM IST = 01:30 UTC
+            Description: Daily morning weather alert check
+            Enabled: true
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+
 Outputs:
   ApiUrl:
     Description: API Gateway invoke URL for POST /query (29s hard cap — use FunctionUrl for slow models).
@@ -116,3 +152,6 @@ Outputs:
     Value: !Ref AgentFunction
   TtsFunctionName:
     Value: !Ref TtsFunction
+  AlertTopicArn:
+    Description: SNS topic for weather alert notifications.
+    Value: !Ref AlertTopic
