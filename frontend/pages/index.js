@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, Trash2 } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import TopBar from '@/components/TopBar';
 import VoiceInput from '@/components/VoiceInput';
@@ -9,7 +9,6 @@ import HourlyTimeline from '@/components/HourlyTimeline';
 import ForecastList from '@/components/ForecastList';
 import AlertBanner from '@/components/AlertBanner';
 import ChatHistory from '@/components/ChatHistory';
-import AudioPlayer from '@/components/AudioPlayer';
 import ErrorToast from '@/components/ErrorToast';
 import SuggestionChips from '@/components/SuggestionChips';
 import ComparisonCard from '@/components/ComparisonCard';
@@ -29,9 +28,9 @@ export default function Home() {
   const [messages, setMessages] = useState([]);
   const [latestResponse, setLatestResponse] = useState("");
   const [latestAudio, setLatestAudio] = useState("");
-  
   const [uiMode, setUiMode] = useState("dashboard");
   const [comparisonData, setComparisonData] = useState(null);
+  const [streamingText, setStreamingText] = useState("");
 
   // Explicit language state (overrides auto-detection for subsequent turns)
   const [selectedLang, setSelectedLang] = useState("en");
@@ -112,7 +111,6 @@ export default function Home() {
     if (!isSilentLocationUpdate) {
       setMessages([...currentMessages, userMsg]);
       setLatestResponse("");
-      setLatestAudio("");
     }
 
     setAppState('processing');
@@ -138,12 +136,23 @@ export default function Home() {
       setMessages(response.messages || [...currentMessages, userMsg]);
       
       if (!isSilentLocationUpdate) {
-        setLatestResponse(response.response_text || "");
+        const fullText = response.response_text || "";
+        setLatestResponse(fullText);
         setLatestAudio(response.audio_b64 || "");
         setUiMode(response.ui_mode || "chat");
         setComparisonData(response.comparison_data || null);
         if (response.lang) {
           setSelectedLang(response.lang);
+        }
+        // Typewriter reveal — stream words into streamingText so the reply
+        // appears progressively rather than popping in all at once.
+        setStreamingText("");
+        const words = fullText.split(" ");
+        let built = "";
+        for (let i = 0; i < words.length; i++) {
+          built += (i === 0 ? "" : " ") + words[i];
+          const snapshot = built;
+          setTimeout(() => setStreamingText(snapshot), i * 35);
         }
       }
       
@@ -199,6 +208,12 @@ export default function Home() {
     }
   };
 
+  const handleClearChat = () => {
+    setMessages([]);
+    setLatestResponse("");
+    setStreamingText("");
+  };
+
   const dock = (
     <div className="max-w-3xl mx-auto w-full px-4 pt-3 pb-4">
       <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} appState={appState} currentLang={selectedLang} />
@@ -212,7 +227,16 @@ export default function Home() {
       rounded-[24px] bg-white/[0.06] border border-white/10 backdrop-blur-md">
       <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/10 shrink-0">
         <MessageCircle className="w-4 h-4 text-white/60" strokeWidth={1.75} />
-        <h3 className="text-sm font-medium text-white/70">Weather Buddy</h3>
+        <h3 className="text-sm font-medium text-white/70 flex-1">Weather Buddy</h3>
+        {messages.length > 0 && (
+          <button
+            onClick={handleClearChat}
+            className="p-1.5 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/[0.06] transition-colors"
+            title="Clear conversation"
+          >
+            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.75} />
+          </button>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto hide-scrollbar p-4 flex flex-col">
         {messages.length === 0 && appState !== 'processing' ? (
@@ -222,7 +246,7 @@ export default function Home() {
           </p>
         ) : (
           <>
-            <ChatHistory messages={messages} currentLang={selectedLang} />
+            <ChatHistory messages={messages} currentLang={selectedLang} streamingText={streamingText} />
             {appState === 'processing' && (
               <div className="flex justify-start my-1.5">
                 <div className="bg-white/[0.06] text-white/60 px-3.5 py-2 rounded-2xl rounded-bl-md
@@ -230,11 +254,6 @@ export default function Home() {
                   <span className="w-1.5 h-1.5 bg-white/70 rounded-full animate-ping" />
                   Weather Buddy is thinking…
                 </div>
-              </div>
-            )}
-            {latestAudio && (
-              <div className="mt-2">
-                <AudioPlayer audioBase64={latestAudio} autoPlay={true} />
               </div>
             )}
             <div ref={endOfChatRef} className="h-1" />

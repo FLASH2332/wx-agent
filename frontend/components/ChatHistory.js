@@ -1,38 +1,41 @@
 import React from 'react';
 
-export default function ChatHistory({ messages = [], currentLang = "en" }) {
+export default function ChatHistory({ messages = [], currentLang = "en", streamingText = "" }) {
   if (!messages || messages.length === 0) return null;
+
+  // Find the index of the last assistant message so we can apply the typewriter text.
+  let lastAssistantIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant') { lastAssistantIdx = i; break; }
+  }
 
   return (
     <div className="flex flex-col gap-4 mt-4 mb-3" role="log" aria-live="polite">
       {messages.map((msg, idx) => {
         const isUser = msg.role === 'user';
-        
+
         const textBlocks = (msg.content || []).filter(c => c.text);
         if (textBlocks.length === 0) return null;
-        
-        const textContent = textBlocks.map(c => c.text).join(" ");
-        if (!textContent) return null;
+
+        // For the latest assistant message, use streamingText while it's being revealed.
+        const rawText = textBlocks.map(c => c.text).join(" ");
+        const displayText = (!isUser && idx === lastAssistantIdx && streamingText)
+          ? streamingText
+          : rawText;
+        if (!displayText) return null;
 
         return (
-          <div key={idx} className="flex w-full justify-start">
-            <div 
-              className={`w-full px-5 py-4 text-sm leading-relaxed border border-white/5 shadow-sm
-                ${isUser ? 'bg-[#181818] rounded-[24px]' : 'bg-[#1a1a1a] rounded-[24px]'}
+          <div key={idx} className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <div
+              className={`max-w-[85%] px-4 py-2.5 text-sm leading-relaxed
+                shadow-[0_1px_3px_rgba(0,0,0,0.12)]
+                ${isUser
+                  ? 'bg-blue-600/80 text-white rounded-[16px] rounded-tr-[4px]'
+                  : 'bg-white/[0.06] text-white/85 rounded-[16px] rounded-tl-[4px] border border-white/[0.06]'}
               `}
               lang={!isUser ? currentLang : undefined}
             >
-              <div className="text-xs font-medium text-white/40 mb-2">
-                {isUser ? "You said" : "Weather Buddy"}
-              </div>
-              <div className="text-white/90 text-[15px]">
-                {textContent.split(/(\*\*.*?\*\*)/g).map((part, i) => {
-                  if (part.startsWith('**') && part.endsWith('**')) {
-                    return <strong key={i} className="font-semibold text-white">{part.slice(2, -2)}</strong>;
-                  }
-                  return part;
-                })}
-              </div>
+              {displayText}
             </div>
           </div>
         );
