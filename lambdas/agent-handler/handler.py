@@ -22,8 +22,6 @@ TTS_LAMBDA_NAME = os.environ["TTS_LAMBDA_NAME"]
 lambda_client = boto3.client("lambda", region_name=AWS_REGION)
 
 CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
     "Content-Type": "application/json",
 }
 
