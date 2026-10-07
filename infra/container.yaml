@@ -1,0 +1,796 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Weather Buddy container stack: API Gateway (HTTP API) -> VPC Link -> internal ALB -> ECS Fargate
+  (the agent Docker image, LLM reached over an external API), with Secrets Manager injection,
+  autoscaling, CloudWatch alarms/dashboard and S3 log archiving. Deployed with scripts/deploy.py; it reuses the
+  pre-existing LabRole (Learner Lab accounts cannot create IAM roles). By default it creates its own S3 buckets and
+  SNS topic; give the External* parameters to use the ones from the platform stack (infra/platform.yaml) instead.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: lab
+    AllowedPattern: "^[a-z0-9-]{2,12}$"
+    Description: Short lowercase name used in resource names (e.g. lab-new, lab-existing).
+  ImageUri:
+    Type: String
+    Description: ECR image URI for the agent (scripts/deploy.py builds and pushes it).
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: At least two subnets in different AZs (the default VPC subnets work).
+  RoleName:
+    Type: String
+    Default: LabRole
+    Description: Existing IAM role used as ECS execution role, task role, Lambda role and autoscaling role.
+
+  OwmApiKey:
+    Type: String
+    NoEcho: true
+  LlmApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Empty for Bedrock (uses the task role).
+  LlmModelId:
+    Type: String
+    Default: groq/openai/gpt-oss-120b
+    Description: LiteLLM model id, e.g. groq/..., openai/... (+LlmBaseUrl), bedrock/us.amazon.nova-lite-v1:0.
+  LlmBaseUrl:
+    Type: String
+    Default: ""
+  RouterModelId:
+    Type: String
+    Default: ""
+    Description: Optional second (cheaper) model for the UI-routing step. Same provider as LlmModelId.
+  UseSecretsManager:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Inject keys from Secrets Manager (true) or as plain task environment variables (false, if the role cannot read secrets).
+
+  TaskCpu:
+    Type: String
+    Default: "512"
+    AllowedValues: ["256", "512", "1024", "2048"]
+  TaskMemory:
+    Type: String
+    Default: "1024"
+    Description: Must be a valid Fargate combination for TaskCpu (512 CPU -> 1024-4096 MB).
+  DesiredCount:
+    Type: Number
+    Default: 1
+  EnableAutoScaling:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  MinCount:
+    Type: Number
+    Default: 1
+  MaxCount:
+    Type: Number
+    Default: 3
+  CpuTargetPercent:
+    Type: Number
+    Default: 60
+  RequestsPerTarget:
+    Type: Number
+    Default: 60
+    Description: Scale out when the average requests per task per minute exceeds this.
+
+  EnableApiGateway:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: true = HTTP API + VPC Link in front of an internal ALB. false = internet-facing ALB only (fallback if the account blocks VPC links).
+  EnableApiAccessLogs:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  ApiThrottleRate:
+    Type: Number
+    Default: 20
+    Description: Steady requests per second allowed by API Gateway (protects LLM spend).
+  ApiThrottleBurst:
+    Type: Number
+    Default: 40
+  CorsOrigins:
+    Type: CommaDelimitedList
+    Default: "*"
+    Description: Allowed browser origins, e.g. https://my-app.vercel.app,http://localhost:3000
+
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90]
+  ExportLogsToS3:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Daily export of the CloudWatch log groups to the central S3 bucket.
+  LogArchiveDays:
+    Type: Number
+    Default: 90
+    Description: Days to keep archived logs in S3.
+  AlarmEmail:
+    Type: String
+    Default: ""
+    Description: Email for alarm notifications (needs a confirmation click). Empty = no subscription.
+  EnableDiagnostics:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Expose GET /diag/aws, which reports which AWS services the task role can call.
+
+  ExternalLogsBucketName:
+    Type: String
+    Default: ""
+    Description: >
+      Use this EXISTING bucket (in the platform account) for ALB access logs and CloudWatch exports instead of
+      creating one here. Its bucket policy must allow this account (infra/platform.yaml does). Empty = create locally.
+  ExternalSttBucketName:
+    Type: String
+    Default: ""
+    Description: Use this existing bucket for Transcribe input instead of creating one. Empty = create locally.
+  ExternalAlarmTopicArn:
+    Type: String
+    Default: ""
+    Description: >
+      Send CloudWatch alarm notifications to this existing SNS topic (in the platform account) instead of creating one.
+      Its topic policy must allow this account's alarms. Empty = create locally (AlarmEmail applies only then).
+
+  LangStrategy:
+    Type: String
+    Default: llm-native
+    AllowedValues: [llm-native, translate-pivot]
+  SttProviders:
+    Type: String
+    Default: aws-transcribe,openai
+  TranslateProviders:
+    Type: String
+    Default: aws-translate,llm
+  TtsProviders:
+    Type: String
+    Default: polly,browser
+
+Conditions:
+  UseSecrets: !Equals [!Ref UseSecretsManager, "true"]
+  UseApi: !Equals [!Ref EnableApiGateway, "true"]
+  NoApi: !Not [!Equals [!Ref EnableApiGateway, "true"]]
+  ApiLogsOn: !And [!Equals [!Ref EnableApiGateway, "true"], !Equals [!Ref EnableApiAccessLogs, "true"]]
+  AutoScalingOn: !Equals [!Ref EnableAutoScaling, "true"]
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
+  ExportLogs: !Equals [!Ref ExportLogsToS3, "true"]
+  CreateLogsBucket: !Equals [!Ref ExternalLogsBucketName, ""]
+  CreateSttBucket: !Equals [!Ref ExternalSttBucketName, ""]
+  CreateAlarmTopic: !Equals [!Ref ExternalAlarmTopicArn, ""]
+
+# ELB log-delivery principals (ALB access logs). Learner Lab regions only; add yours if needed:
+# https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
+Mappings:
+  ElbLogAccount:
+    us-east-1: {AccountId: "127311923021"}
+    us-east-2: {AccountId: "033677994240"}
+    us-west-1: {AccountId: "027434742980"}
+    us-west-2: {AccountId: "797873946194"}
+
+Resources:
+  # ------------------------------------------------------------------ S3 (central logs + Transcribe input)
+  LogsBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateLogsBucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "wb-${EnvName}-logs-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-archived-logs
+            Status: Enabled
+            ExpirationInDays: !Ref LogArchiveDays
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 2}
+
+  LogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateLogsBucket
+    Properties:
+      Bucket: !Ref LogsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AlbAccessLogs
+            Effect: Allow
+            Principal:
+              AWS: !Sub
+                - "arn:${AWS::Partition}:iam::${ElbAccount}:root"
+                - ElbAccount: !FindInMap [ElbLogAccount, !Ref "AWS::Region", AccountId]
+            Action: s3:PutObject
+            Resource: !Sub "${LogsBucket.Arn}/alb/AWSLogs/${AWS::AccountId}/*"
+          - Sid: CloudWatchLogsExportAcl
+            Effect: Allow
+            Principal: {Service: !Sub "logs.${AWS::Region}.amazonaws.com"}
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt LogsBucket.Arn
+            Condition:
+              StringEquals: {"aws:SourceAccount": !Ref "AWS::AccountId"}
+          - Sid: CloudWatchLogsExportPut
+            Effect: Allow
+            Principal: {Service: !Sub "logs.${AWS::Region}.amazonaws.com"}
+            Action: s3:PutObject
+            Resource: !Sub "${LogsBucket.Arn}/exports/*"
+            Condition:
+              StringEquals:
+                "s3:x-amz-acl": bucket-owner-full-control
+                "aws:SourceAccount": !Ref "AWS::AccountId"
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt LogsBucket.Arn, !Sub "${LogsBucket.Arn}/*"]
+            Condition:
+              Bool: {"aws:SecureTransport": "false"}
+
+  SttBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateSttBucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Sub "wb-${EnvName}-stt-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-stt-input
+            Status: Enabled
+            Prefix: stt-input/
+            ExpirationInDays: 1
+
+  # ------------------------------------------------------------------ secrets
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: UseSecrets
+    Properties:
+      Description: !Sub "Weather Buddy (${EnvName}) API keys injected into the agent container."
+      SecretString: !Sub '{"OWM_API_KEY":"${OwmApiKey}","LLM_API_KEY":"${LlmApiKey}"}'
+
+  # ------------------------------------------------------------------ networking
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Weather Buddy ALB
+      VpcId: !Ref VpcId
+
+  VpcLinkSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: UseApi
+    Properties:
+      GroupDescription: API Gateway VPC link
+      VpcId: !Ref VpcId
+
+  AlbIngressFromVpcLink:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: UseApi
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId: !Ref VpcLinkSecurityGroup
+
+  AlbIngressPublic:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: NoApi
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Weather Buddy agent tasks (only the ALB may connect)
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  # ------------------------------------------------------------------ load balancer
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Scheme: !If [UseApi, internal, internet-facing]
+      Tags:
+        - {Key: wb-logs-policy, Value: !If [CreateLogsBucket, !Ref LogsBucketPolicy, external]}
+      Subnets: !Ref SubnetIds
+      SecurityGroups: [!Ref AlbSecurityGroup]
+      LoadBalancerAttributes:
+        - {Key: idle_timeout.timeout_seconds, Value: "60"}
+        - {Key: access_logs.s3.enabled, Value: "true"}
+        - {Key: access_logs.s3.bucket, Value: !If [CreateLogsBucket, !Ref LogsBucket, !Ref ExternalLogsBucketName]}
+        - {Key: access_logs.s3.prefix, Value: alb}
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 8080
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: {HttpCode: "200"}
+      TargetGroupAttributes:
+        - {Key: deregistration_delay.timeout_seconds, Value: "30"}
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # ------------------------------------------------------------------ ECS (Fargate)
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/weatherbuddy-${EnvName}"
+      RetentionInDays: !Ref LogRetentionDays
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "weatherbuddy-${EnvName}"
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "weatherbuddy-${EnvName}"
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RoleName}"
+      TaskRoleArn: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RoleName}"
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: agent
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings:
+            - {ContainerPort: 8080, Protocol: tcp}
+          Environment:
+            - {Name: PORT, Value: "8080"}
+            - {Name: HOST, Value: 0.0.0.0}
+            - {Name: AWS_REGION, Value: !Ref "AWS::Region"}
+            - {Name: LLM_MODEL_ID, Value: !Ref LlmModelId}
+            - {Name: LLM_BASE_URL, Value: !Ref LlmBaseUrl}
+            - {Name: ROUTER_MODEL_ID, Value: !Ref RouterModelId}
+            - {Name: STT_S3_BUCKET, Value: !If [CreateSttBucket, !Ref SttBucket, !Ref ExternalSttBucketName]}
+            - {Name: STT_PROVIDERS, Value: !Ref SttProviders}
+            - {Name: TRANSLATE_PROVIDERS, Value: !Ref TranslateProviders}
+            - {Name: TTS_PROVIDERS, Value: !Ref TtsProviders}
+            - {Name: LANG_STRATEGY, Value: !Ref LangStrategy}
+            - {Name: CORS_ALLOW_ORIGINS, Value: !Join [",", !Ref CorsOrigins]}
+            - {Name: DIAG_ENABLED, Value: !Ref EnableDiagnostics}
+            - {Name: TTS_CACHE_DIR, Value: /tmp/tts}
+            - !If [UseSecrets, !Ref "AWS::NoValue", {Name: OWM_API_KEY, Value: !Ref OwmApiKey}]
+            - !If [UseSecrets, !Ref "AWS::NoValue", {Name: LLM_API_KEY, Value: !Ref LlmApiKey}]
+          Secrets: !If
+            - UseSecrets
+            - - Name: OWM_API_KEY
+                ValueFrom: !Sub "${AppSecret}:OWM_API_KEY::"
+              - Name: LLM_API_KEY
+                ValueFrom: !Sub "${AppSecret}:LLM_API_KEY::"
+            - !Ref "AWS::NoValue"
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=4)" || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 40
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AppLogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: agent
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: Listener
+    Properties:
+      ServiceName: !Sub "weatherbuddy-${EnvName}"
+      Cluster: !Ref Cluster
+      LaunchType: FARGATE
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      HealthCheckGracePeriodSeconds: 90
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        DeploymentCircuitBreaker: {Enable: true, Rollback: true}
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          # Default-VPC subnets are public and there is no NAT gateway (cost decision): tasks need a
+          # public IP to pull the image and reach the LLM API. The task security group still only
+          # accepts traffic from the ALB.
+          AssignPublicIp: ENABLED
+          SecurityGroups: [!Ref TaskSecurityGroup]
+          Subnets: !Ref SubnetIds
+      LoadBalancers:
+        - ContainerName: agent
+          ContainerPort: 8080
+          TargetGroupArn: !Ref TargetGroup
+
+  # ------------------------------------------------------------------ autoscaling (up and down)
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: AutoScalingOn
+    Properties:
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      ResourceId: !Sub "service/${Cluster}/${Service.Name}"
+      MinCapacity: !Ref MinCount
+      MaxCapacity: !Ref MaxCount
+      RoleARN: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RoleName}"
+
+  CpuScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: AutoScalingOn
+    Properties:
+      PolicyName: !Sub "weatherbuddy-${EnvName}-cpu"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification: {PredefinedMetricType: ECSServiceAverageCPUUtilization}
+        TargetValue: !Ref CpuTargetPercent
+        ScaleOutCooldown: 60
+        ScaleInCooldown: 180
+
+  RequestScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: AutoScalingOn
+    Properties:
+      PolicyName: !Sub "weatherbuddy-${EnvName}-requests"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Sub "${Alb.LoadBalancerFullName}/${TargetGroup.TargetGroupFullName}"
+        TargetValue: !Ref RequestsPerTarget
+        ScaleOutCooldown: 60
+        ScaleInCooldown: 180
+
+  # ------------------------------------------------------------------ API Gateway (HTTP API -> VPC Link -> ALB)
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: ApiLogsOn
+    Properties:
+      LogGroupName: !Sub "/apigw/weatherbuddy-${EnvName}"
+      RetentionInDays: !Ref LogRetentionDays
+
+  VpcLink:
+    Type: AWS::ApiGatewayV2::VpcLink
+    Condition: UseApi
+    Properties:
+      Name: !Sub "weatherbuddy-${EnvName}"
+      SecurityGroupIds: [!Ref VpcLinkSecurityGroup]
+      SubnetIds: !Ref SubnetIds
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Condition: UseApi
+    Properties:
+      Name: !Sub "weatherbuddy-${EnvName}"
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: !Ref CorsOrigins
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: [content-type]
+        MaxAge: 600
+
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Condition: UseApi
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: ANY
+      ConnectionType: VPC_LINK
+      ConnectionId: !Ref VpcLink
+      IntegrationUri: !Ref Listener
+      PayloadFormatVersion: "1.0"
+      TimeoutInMillis: 30000
+
+  ApiDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Condition: UseApi
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: $default
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Condition: UseApi
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: $default
+      AutoDeploy: true
+      DefaultRouteSettings:
+        DetailedMetricsEnabled: true
+        ThrottlingBurstLimit: !Ref ApiThrottleBurst
+        ThrottlingRateLimit: !Ref ApiThrottleRate
+      AccessLogSettings: !If
+        - ApiLogsOn
+        - DestinationArn: !GetAtt ApiLogGroup.Arn
+          Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","method":"$context.httpMethod","path":"$context.path","status":"$context.status","latencyMs":"$context.responseLatency","integrationStatus":"$context.integrationStatus","error":"$context.integrationErrorMessage"}'
+        - !Ref "AWS::NoValue"
+
+  # ------------------------------------------------------------------ CloudWatch: alarms + dashboard
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: CreateAlarmTopic
+    Properties:
+      TopicName: !Sub "weatherbuddy-${EnvName}-alarms"
+      Subscription:
+        - !If
+          - HasAlarmEmail
+          - {Protocol: email, Endpoint: !Ref AlarmEmail}
+          - !Ref "AWS::NoValue"
+
+  AlbTarget5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The agent returned 5xx responses.
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - {Name: LoadBalancer, Value: !GetAtt Alb.LoadBalancerFullName}
+        - {Name: TargetGroup, Value: !GetAtt TargetGroup.TargetGroupFullName}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!If [CreateAlarmTopic, !Ref AlarmTopic, !Ref ExternalAlarmTopicArn]]
+
+  Alb5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The load balancer itself returned 5xx (no healthy targets, timeouts).
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_ELB_5XX_Count
+      Dimensions:
+        - {Name: LoadBalancer, Value: !GetAtt Alb.LoadBalancerFullName}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!If [CreateAlarmTopic, !Ref AlarmTopic, !Ref ExternalAlarmTopicArn]]
+
+  LatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: p95 response time above 20s (API Gateway cuts requests at 30s).
+      Namespace: AWS/ApplicationELB
+      MetricName: TargetResponseTime
+      Dimensions:
+        - {Name: LoadBalancer, Value: !GetAtt Alb.LoadBalancerFullName}
+        - {Name: TargetGroup, Value: !GetAtt TargetGroup.TargetGroupFullName}
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 20
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!If [CreateAlarmTopic, !Ref AlarmTopic, !Ref ExternalAlarmTopicArn]]
+
+  UnhealthyHostsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: At least one task is failing its health check.
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Dimensions:
+        - {Name: LoadBalancer, Value: !GetAtt Alb.LoadBalancerFullName}
+        - {Name: TargetGroup, Value: !GetAtt TargetGroup.TargetGroupFullName}
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!If [CreateAlarmTopic, !Ref AlarmTopic, !Ref ExternalAlarmTopicArn]]
+
+  NoHealthyHostsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: No healthy task is serving traffic (outage).
+      Namespace: AWS/ApplicationELB
+      MetricName: HealthyHostCount
+      Dimensions:
+        - {Name: LoadBalancer, Value: !GetAtt Alb.LoadBalancerFullName}
+        - {Name: TargetGroup, Value: !GetAtt TargetGroup.TargetGroupFullName}
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!If [CreateAlarmTopic, !Ref AlarmTopic, !Ref ExternalAlarmTopicArn]]
+
+  CpuHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Average CPU above 85% (autoscaling may be at its maximum).
+      Namespace: AWS/ECS
+      MetricName: CPUUtilization
+      Dimensions:
+        - {Name: ClusterName, Value: !Ref Cluster}
+        - {Name: ServiceName, Value: !GetAtt Service.Name}
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 85
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!If [CreateAlarmTopic, !Ref AlarmTopic, !Ref ExternalAlarmTopicArn]]
+
+  ApiGateway5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: UseApi
+    Properties:
+      AlarmDescription: API Gateway returned 5xx (includes the 30s integration timeout).
+      Namespace: AWS/ApiGateway
+      MetricName: 5xx
+      Dimensions:
+        - {Name: ApiId, Value: !Ref HttpApi}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!If [CreateAlarmTopic, !Ref AlarmTopic, !Ref ExternalAlarmTopicArn]]
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "weatherbuddy-${EnvName}"
+      DashboardBody: !Sub |
+        {"widgets":[
+          {"type":"metric","x":0,"y":0,"width":12,"height":6,"properties":{"title":"Requests and errors","region":"${AWS::Region}","stat":"Sum","period":60,
+            "metrics":[["AWS/ApplicationELB","RequestCount","LoadBalancer","${Alb.LoadBalancerFullName}"],
+                       [".","HTTPCode_Target_5XX_Count",".","."],[".","HTTPCode_ELB_5XX_Count",".","."]]}},
+          {"type":"metric","x":12,"y":0,"width":12,"height":6,"properties":{"title":"Response time (s)","region":"${AWS::Region}","period":60,
+            "metrics":[["AWS/ApplicationELB","TargetResponseTime","LoadBalancer","${Alb.LoadBalancerFullName}",{"stat":"Average"}],
+                       ["...",{"stat":"p95"}]]}},
+          {"type":"metric","x":0,"y":6,"width":12,"height":6,"properties":{"title":"ECS CPU / memory (%)","region":"${AWS::Region}","stat":"Average","period":60,
+            "metrics":[["AWS/ECS","CPUUtilization","ClusterName","${Cluster}","ServiceName","${Service.Name}"],[".","MemoryUtilization",".",".",".","."]]}},
+          {"type":"metric","x":12,"y":6,"width":12,"height":6,"properties":{"title":"Healthy / unhealthy tasks","region":"${AWS::Region}","stat":"Maximum","period":60,
+            "metrics":[["AWS/ApplicationELB","HealthyHostCount","LoadBalancer","${Alb.LoadBalancerFullName}","TargetGroup","${TargetGroup.TargetGroupFullName}"],
+                       [".","UnHealthyHostCount",".",".",".","."]]}}
+        ]}
+
+  # ------------------------------------------------------------------ CloudWatch Logs -> S3 (daily export)
+  LogExportFunction:
+    Type: AWS::Serverless::Function
+    Condition: ExportLogs
+    Properties:
+      Description: Exports yesterday's CloudWatch logs to the central S3 bucket.
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 300
+      MemorySize: 128
+      Role: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RoleName}"
+      Environment:
+        Variables:
+          BUCKET: !If [CreateLogsBucket, !Ref LogsBucket, !Ref ExternalLogsBucketName]
+          LOG_GROUPS: !If [ApiLogsOn, !Sub "${AppLogGroup},${ApiLogGroup}", !Ref AppLogGroup]
+      Events:
+        Daily:
+          Type: Schedule
+          Properties:
+            Schedule: cron(15 0 * * ? *)
+            Description: Daily export of yesterday's logs
+      InlineCode: |
+        import datetime
+        import os
+        import time
+
+        import boto3
+
+        logs = boto3.client("logs")
+
+
+        def handler(event, context):
+            days_back = int((event or {}).get("days_back", 1))
+            now = datetime.datetime.now(datetime.timezone.utc)
+            day = (now - datetime.timedelta(days=days_back)).date()
+            start = int(datetime.datetime(day.year, day.month, day.day, tzinfo=datetime.timezone.utc).timestamp() * 1000)
+            end = start + 24 * 3600 * 1000 - 1
+            results = {}
+            for group in [g for g in os.environ["LOG_GROUPS"].split(",") if g]:
+                results[group] = export(group, start, end, str(day), context)
+            print(results)
+            return results
+
+
+        def export(group, start, end, day, context):
+            prefix = "exports/%s/%s" % (group.strip("/").replace("/", "_"), day)
+            task = None
+            # Only one export task may run per account at a time: wait for our turn.
+            while task is None and context.get_remaining_time_in_millis() > 30000:
+                try:
+                    task = logs.create_export_task(
+                        logGroupName=group, fromTime=start, to=end,
+                        destination=os.environ["BUCKET"], destinationPrefix=prefix)["taskId"]
+                except logs.exceptions.LimitExceededException:
+                    time.sleep(10)
+                except logs.exceptions.ResourceNotFoundException:
+                    return "log group not found"
+            if task is None:
+                return "skipped: another export task was running"
+            while context.get_remaining_time_in_millis() > 10000:
+                status = logs.describe_export_tasks(taskId=task)["exportTasks"][0]["status"]["code"]
+                if status in ("COMPLETED", "CANCELLED", "FAILED"):
+                    return status
+                time.sleep(5)
+            return "RUNNING (continues in the background)"
+
+Outputs:
+  FrontendApiUrl:
+    Description: Put this in frontend/.env.local as NEXT_PUBLIC_API_URL.
+    Value: !If [UseApi, !GetAtt HttpApi.ApiEndpoint, !Sub "http://${Alb.DNSName}"]
+  AlbDnsName:
+    Value: !GetAtt Alb.DNSName
+  ClusterName:
+    Value: !Ref Cluster
+  ServiceName:
+    Value: !GetAtt Service.Name
+  AppLogGroupName:
+    Value: !Ref AppLogGroup
+  LogsBucketName:
+    Value: !If [CreateLogsBucket, !Ref LogsBucket, !Ref ExternalLogsBucketName]
+  SttBucketName:
+    Value: !If [CreateSttBucket, !Ref SttBucket, !Ref ExternalSttBucketName]
+  DashboardUrl:
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=weatherbuddy-${EnvName}"
+  AlarmTopicArn:
+    Value: !If [CreateAlarmTopic, !Ref AlarmTopic, !Ref ExternalAlarmTopicArn]

@@ -5,7 +5,8 @@ export default function ComparisonCard({ data }) {
   if (!data || !data.locations || data.locations.length < 2) return null;
 
   const [loc1, loc2] = data.locations;
-  const winner = data.winner;
+  const winner = (data.winner || '').trim();
+  const hasScore = (loc) => typeof loc.score === 'number';
 
   // Determine progress bar colors based on score
   const getScoreColor = (score) => {
@@ -32,7 +33,7 @@ export default function ComparisonCard({ data }) {
         </div>
 
         {[loc1, loc2].map((loc, idx) => {
-          const isWinner = loc.name.toLowerCase().includes(winner.toLowerCase());
+          const isWinner = winner !== '' && (loc.name || '').toLowerCase().includes(winner.toLowerCase());
           
           return (
             <div 
@@ -64,27 +65,23 @@ export default function ComparisonCard({ data }) {
               </div>
 
               <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                <div>
-                  <div className="text-xs text-white/40 mb-1">Rain chance</div>
-                  <div className="text-sm font-medium text-white/80">{loc.rain_chance}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-white/40 mb-1">UV index</div>
-                  <div className="text-sm font-medium text-white/80">{loc.uv_index}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-white/40 mb-1">Wind</div>
-                  <div className="text-sm font-medium text-white/80">{loc.wind}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-white/40 mb-1">Humidity</div>
-                  <div className="text-sm font-medium text-white/80">{loc.humidity}</div>
-                </div>
+                {[
+                  ['Rain chance', loc.rain_chance],
+                  ['UV index', loc.uv_index],
+                  ['Wind', loc.wind],
+                  ['Humidity', loc.humidity],
+                ].filter(([, value]) => value && String(value).trim().toLowerCase() !== 'n/a').map(([label, value]) => (
+                  <div key={label}>
+                    <div className="text-xs text-white/40 mb-1">{label}</div>
+                    <div className="text-sm font-medium text-white/80">{value}</div>
+                  </div>
+                ))}
               </div>
 
               <div className="mt-auto pt-4 border-t border-white/5 flex flex-col gap-3">
+                {hasScore(loc) && (<>
                 <div className="flex justify-between text-sm">
-                  <span className="text-white/60">Weekend score</span>
+                  <span className="text-white/60">Score</span>
                   <span className="text-white/90 font-medium">{loc.score}/10</span>
                 </div>
                 <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
@@ -93,9 +90,12 @@ export default function ComparisonCard({ data }) {
                     style={{ width: `${(loc.score / 10) * 100}%` }}
                   />
                 </div>
-                <div className={`p-4 mt-2 rounded-[20px] text-sm leading-relaxed border ${getScoreBg(loc.score)}`}>
-                  {loc.score_reasoning}
-                </div>
+                </>)}
+                {loc.score_reasoning && loc.score_reasoning.trim().toLowerCase() !== 'n/a' && (
+                  <div className={`p-4 mt-2 rounded-[20px] text-sm leading-relaxed border ${hasScore(loc) ? getScoreBg(loc.score) : 'bg-white/[0.04] text-white/70 border-white/10'}`}>
+                    {loc.score_reasoning}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -103,12 +103,14 @@ export default function ComparisonCard({ data }) {
       </div>
 
       {/* Full width winner reasoning */}
-      <div className="p-6 rounded-[28px] bg-[#141414] border border-white/10 shadow-xl">
-        <h4 className="text-sm font-medium text-white/90 mb-2">Why {winner} wins:</h4>
-        <p className="text-sm text-white/70 leading-relaxed">
-          {data.winner_reasoning}
-        </p>
-      </div>
+      {(winner || data.winner_reasoning) && (
+        <div className="p-6 rounded-[28px] bg-[#141414] border border-white/10 shadow-xl">
+          <h4 className="text-sm font-medium text-white/90 mb-2">{winner ? `Why ${winner} wins:` : 'Summary'}</h4>
+          <p className="text-sm text-white/70 leading-relaxed">
+            {data.winner_reasoning}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

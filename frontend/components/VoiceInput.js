@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Square, Send } from 'lucide-react';
 import SuggestionChips from './SuggestionChips';
+import { transcribeAudio } from '@/lib/api';
 
-export default function VoiceInput({ onTranscript, appState }) {
+export default function VoiceInput({ onTranscript, onError, appState }) {
   const [isSupported, setIsSupported] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -59,34 +60,25 @@ export default function VoiceInput({ onTranscript, appState }) {
     }
   };
 
+  const blobToBase64 = (blob) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
   const handleTranscription = async (audioBlob) => {
     setIsTranscribing(true);
     try {
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
-      reader.onloadend = async () => {
-        const base64AudioMessage = reader.result.split(',')[1];
-        
-        const transcribeUrl = process.env.NEXT_PUBLIC_API_URL 
-          ? process.env.NEXT_PUBLIC_API_URL.replace('/query', '/transcribe')
-          : '/transcribe';
-
-        const response = await fetch(transcribeUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audio_b64: base64AudioMessage })
-        });
-        
-        const data = await response.json();
-        
-        if (data.text) {
-          onTranscript(data.text, data.language || "en");
-        } else {
-          console.error("Transcription failed:", data);
-        }
-      };
+      const base64Audio = await blobToBase64(audioBlob);
+      const data = await transcribeAudio(base64Audio, audioBlob.type || 'audio/webm');
+      if (data.text) {
+        onTranscript(data.text, data.language || "en");
+      }
     } catch (err) {
-      console.error("Error sending audio:", err);
+      console.error("Transcription failed:", err);
+      if (onError) onError(err.message || "Transcription failed.");
     } finally {
       setIsTranscribing(false);
     }

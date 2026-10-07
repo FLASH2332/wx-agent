@@ -1,374 +1,78 @@
-<p align="center">
-  <img src="https://openweathermap.org/img/wn/02d@4x.png" width="120" alt="Weather Buddy" />
-</p>
+# 🌤️ WeatherBuddy: The Agentic Weather Dashboard
 
-<h1 align="center">🌦️ Weather Buddy</h1>
-
-<p align="center">
-  <strong>A voice-first, multilingual AI weather assistant powered by AWS Strands Agents and Groq.</strong>
-</p>
-
-<p align="center">
-  <em>Ask about the weather in any language. Get answers in that same language — spoken aloud.</em>
-</p>
-
-<p align="center">
-  <a href="#features">Features</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#tech-stack">Tech Stack</a> •
-  <a href="#getting-started">Getting Started</a> •
-  <a href="#project-structure">Project Structure</a> •
-  <a href="#how-it-works">How It Works</a> •
-  <a href="#deployment">Deployment</a>
-</p>
+**WeatherBuddy** is a next-generation, multi-modal weather assistant built for our hackathon. It moves beyond standard rule-based weather apps by employing a multi-agent LLM architecture that deeply understands user context, parses ambiguous natural language, and dynamically routes responses to the most optimal UI layout.
 
 ---
 
-## 🎯 What Is Weather Buddy?
+## 🚀 Hackathon Summary & Vision
 
-Weather Buddy is a **voice-first, AI-powered weather dashboard** that lets you ask about the weather using natural language — by speaking or typing — in **any language**. It combines a conversational AI agent with a rich, real-time weather dashboard that adapts its entire interface to the language you speak.
+Traditional weather apps force users to manually search for locations, scroll through hourly timelines, and decipher meteorological data to answer simple questions like, *"Will I need an umbrella for my run tonight?"* 
 
-Built for the **FirstCommit Hackathon**, Weather Buddy demonstrates how modern AI agent frameworks (AWS Strands Agents), speech-to-text (Groq Whisper), and large language models can come together to create a seamless, multilingual user experience that goes far beyond a simple chatbot.
+WeatherBuddy flips this paradigm. By using a sophisticated **Agentic Workflow**, the application understands conversational queries, resolves ambiguous locations, automatically translates time references (like "tonight" or "this weekend") into precise unix timestamps, and generates hyper-personalized weather analysis. It then dynamically decides whether to respond with a rich, widget-based dashboard or a simple conversational chat.
 
----
+## ✨ Key Features
 
-## ✨ Features
-
-### 🎙️ Voice-First Interaction
-- **Native speech recognition** powered by [Groq Whisper](https://console.groq.com/docs/speech-text) (`whisper-large-v3`).
-- Speak in **any language** — Whisper automatically detects the language from your audio.
-- The microphone button is integrated directly into the chat bar for a unified, modern UX.
-- Text input is also fully supported for users who prefer typing.
-
-### 🌍 Full Multilingual Support
-- **Adaptive language detection:** When you speak in French, Hindi, Tamil, German, Spanish, or any other language, the entire application adapts:
-  - The **AI agent responds in your language** natively (no translation layer — the LLM speaks it directly).
-  - The **UI labels translate** ("Humidity" → "Humidité", "Wind" → "हवा") via an i18n system.
-  - The **weather descriptions translate** natively via OpenWeatherMap's `lang` parameter ("scattered clouds" → "nuages épars").
-  - The **forecast day names localize** ("Mon" → "lun." in French).
-  - The **language dropdown updates** automatically, even adding new languages dynamically if you speak one that isn't in the default list.
-
-### 🤖 AI-Powered Conversational Agent
-- Built on [AWS Strands Agents](https://github.com/strands-agents/strands-agents) — a production-grade agentic AI framework.
-- The agent has access to **4 specialized tools**:
-  | Tool | Purpose |
-  |------|---------|
-  | `get_current_weather` | Current temperature, humidity, wind, conditions |
-  | `get_forecast` | Multi-day daily forecast with highs, lows, and hourly timeline |
-  | `get_alerts` | Government-issued weather alerts (NWS for US, GDACS globally) |
-  | `activity_advisor` | Outdoor activity recommendations based on live weather data |
-- **Context-aware:** The agent knows which city dashboard you're currently viewing. If you ask "Will it rain tomorrow?" without specifying a location, it infers from your dashboard context.
-- **Strictly scoped:** The agent only answers weather-related questions. Off-topic requests are politely declined.
-
-### 📊 Rich Weather Dashboard
-- **Current conditions** with temperature, feels-like, humidity, wind speed, and weather icon.
-- **Hourly timeline** showing the next 24 hours of forecast data in a horizontally scrollable strip.
-- **5-day forecast** sidebar with daily highs/lows, precipitation probability, and conditions.
-- **Real-time weather alerts** from the National Weather Service (US) and GDACS (global), displayed as dismissable banners.
-- **Auto-geolocation:** On first load, the dashboard detects your browser's location and populates weather data automatically.
-- **Manual city search** via a search bar in the top navigation.
-
-### 🔊 Text-to-Speech
-- Agent responses are synthesized to speech via **Amazon Polly** (in production) and played back through a built-in audio player with visualizer bars.
-- The TTS language matches the detected user language for a seamless voice conversation.
-
-### 🎨 Polished UI
-- Glassmorphism design system with layered transparent shadows for depth.
-- Concentric border radii across all nested components (outer = inner + padding).
-- Staggered entrance animations with `cubic-bezier(0.2, 0, 0, 1)` easing.
-- `scale(0.96)` press feedback on all interactive buttons.
-- Tabular number formatting on all weather data so digits don't shift.
-- Icon stroke weights matched to adjacent text weight (1.5px regular, 2px semibold).
-- 44px minimum touch targets on all interactive elements.
+- **Multi-Agent Architecture**: 
+  - **The Analyst Agent**: Deeply analyzes the user's query, calls real-time weather APIs, and performs complex reasoning (e.g., location disambiguation and timezone-aware calculations).
+  - **The UI Router Agent**: Inspects the Analyst's output and determines the optimal way to present the data to the user (rich dashboard vs. conversational text).
+- **Dynamic UI Generation**: The frontend automatically morphs between conversational chat and a full analytical dashboard with 5-day forecasts and hourly timelines based on the Router's JSON payload.
+- **Voice-First Interaction (STT & TTS)**: Full support for real-time voice queries using Groq's `whisper-large-v3` model for lightning-fast speech-to-text transcription.
+- **Native Multilingual Support**: Automatically detects the user's language and instructs the LLM to translate meteorological tool data natively before presenting the response.
+- **Provider-Agnostic LLM Routing**: Powered by `LiteLLM`, allowing the backend to swap between Groq (the current default), OpenAI-compatible APIs and Amazon Bedrock without changing agent code.
+- **Robust Error Handling**: Built-in exponential backoff for rate limits, intelligent fallback UI modes for parsing errors, and aggressive in-place memory scrubbing to ensure compatibility with strict APIs.
 
 ---
 
-## 🏗️ Architecture
+## 🛠️ Technology Stack & Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        FRONTEND                             │
-│              Next.js 14 + Tailwind CSS + Lucide             │
-│                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌──────────┐  │
-│  │  TopBar   │  │ Weather  │  │  Forecast  │  │  Alert   │  │
-│  │ (i18n)   │  │  Card    │  │   List     │  │ Banner   │  │
-│  └──────────┘  └──────────┘  └────────────┘  └──────────┘  │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │        VoiceInput (MediaRecorder + Chat Bar)         │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                    │                    │                    │
-│            POST /transcribe      POST /query                │
-└────────────────────┼────────────────────┼───────────────────┘
-                     │                    │
-┌────────────────────┼────────────────────┼───────────────────┐
-│                  BACKEND (Python)                           │
-│                                                             │
-│  ┌─────────────────┐         ┌──────────────────────────┐   │
-│  │   /transcribe   │         │        /query             │   │
-│  │  Groq Whisper   │         │   Strands Agent + Tools   │   │
-│  │  whisper-large  │         │  (Groq Llama 3.3 70B)    │   │
-│  └─────────────────┘         └──────────────────────────┘   │
-│                                       │                     │
-│                         ┌─────────────┼─────────────┐       │
-│                         │             │             │       │
-│                   ┌─────┴─────┐ ┌─────┴────┐ ┌─────┴────┐  │
-│                   │  OWM API  │ │ NWS/GDACS│ │ Activity │  │
-│                   │ (weather) │ │ (alerts) │ │ Advisor  │  │
-│                   └───────────┘ └──────────┘ └──────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Dual-Mode Backend
-
-Weather Buddy ships with **two backend entry points** for maximum flexibility:
-
-| Mode | File | Use Case |
-|------|------|----------|
-| **Local Development** | `run_local.py` | Standalone Python HTTP server on port 3001. Zero AWS dependencies. Uses Groq as the LLM provider. |
-| **AWS Production** | `handler.py` + `template.yaml` | Serverless deployment via AWS SAM. API Gateway + Lambda. Uses Bedrock or Groq. |
-
-Both entry points share the same agent code (`agent.py`), tools (`tools.py`), and prompt (`prompts.py`).
-
----
-
-## 🛠️ Tech Stack
+### Backend (Agent service)
+- **Python 3.12**
+- **Strands Framework**: For orchestrating the multi-agent workflow and tool calling.
+- **LiteLLM**: For universal LLM API routing.
+- **OpenWeatherMap API**: For real-time meteorological data.
 
 ### Frontend
-| Technology | Purpose |
-|------------|---------|
-| **Next.js 14** | React framework with file-based routing |
-| **Tailwind CSS 3** | Utility-first styling with custom design tokens |
-| **Lucide React** | Consistent, stroke-matched icon library |
-| **Open-Meteo API** | Client-side instant weather data (no key required) |
+- **React / Next.js**: For a dynamic, responsive, and glassmorphic user interface.
+- **Web Audio API**: For capturing microphone input and streaming it to the backend.
 
-### Backend
-| Technology | Purpose |
-|------------|---------|
-| **Python 3.12** | Backend runtime |
-| **AWS Strands Agents** | Agentic AI framework with tool-use loop |
-| **Groq API** | LLM inference (Llama 3.3 70B Versatile) and speech-to-text (Whisper Large v3) |
-| **OpenWeatherMap API** | Server-side weather data with multilingual support |
-| **Amazon Polly** | Text-to-speech synthesis (production) |
+### ☁️ AWS (two accounts, two separately deployed stacks)
 
-### Infrastructure
-| Technology | Purpose |
-|------------|---------|
-| **AWS SAM** | Infrastructure-as-Code for serverless deployment |
-| **AWS Lambda** | Serverless compute for agent and TTS |
-| **AWS API Gateway** | HTTPS routing for `/query` and `/transcribe` |
+| Stack | Account | Template | Contains |
+|---|---|---|---|
+| **agent** | `lab-new` | `infra/container.yaml` | Docker agent on ECS Fargate, API Gateway -> VPC Link -> internal ALB, CloudWatch logs/alarms, autoscaling, Secrets Manager, ECR, log-export Lambda |
+| **platform** | `lab-existing` | `infra/platform.yaml` | S3 (agent logs, Transcribe input), SNS (alarms, weather alerts), EventBridge-scheduled alert Lambda |
 
----
+The old all-Lambda stack (`template.yaml`, `lambdas/`) is kept and still deployable with `make deploy`.
+Full design, commands and tests: [docs/09-two-account-setup.md](docs/09-two-account-setup.md); command reference: [docs/06-deploy-script-reference.md](docs/06-deploy-script-reference.md).
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Python 3.12+** with `pip`
-- **Node.js 18+** with `npm`
-- A free **[OpenWeatherMap API key](https://openweathermap.org/api)** (v2.5 free tier)
-- A free **[Groq API key](https://console.groq.com/)** (for Llama 3.3 + Whisper)
-
-### 1. Clone the Repository
+## Run it locally
 
 ```bash
-git clone https://github.com/FLASH2332/wx-agent.git
-cd wx-agent
+cp .env.example .env            # set OWM_API_KEY and LLM_API_KEY (Groq)
+pip install -r agent_service/requirements-dev.txt
+python -m agent_service         # backend on http://127.0.0.1:3001
+cd frontend && npm install && npm run dev
 ```
+Or with Docker: `make docker-run`. Tests (offline, no AWS): `make test`.
 
-### 2. Configure Environment Variables
+## AWS credentials (one mechanism)
 
-Create a `.env` file in the project root:
-
-```env
-OWM_API_KEY=your_openweathermap_key
-GROQ_API_KEY=your_groq_api_key
-GROQ_MODEL_ID=llama-3.3-70b-versatile
-MODEL_PROVIDER=groq
-```
-
-Create `frontend/.env.local`:
-
-```env
-NEXT_PUBLIC_API_URL=http://127.0.0.1:3001/query
-```
-
-### 3. Install Backend Dependencies
+AWS access comes only from AWS CLI profiles. `.env` holds just the profile *name* (`AWS_PROFILE`) and region, never keys.
 
 ```bash
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# macOS/Linux
-source venv/bin/activate
-
-pip install strands-agents strands-agents-tools python-dotenv
+python scripts/set_lab_credentials.py wb-new         # Learner Lab, agent account
+python scripts/set_lab_credentials.py wb-existing    # Learner Lab, platform account
+python scripts/deploy.py accounts                    # who is who, and which keys expired
 ```
 
-### 4. Install Frontend Dependencies
+## Deploy (each stack on its own)
 
 ```bash
-cd frontend
-npm install
-cd ..
+python scripts/deploy.py deploy lab-existing   # platform: S3, SNS, EventBridge
+python scripts/deploy.py deploy lab-new        # agent: Docker, ALB, API Gateway, CloudWatch
+python scripts/smoke_test.py platform lab-existing
+python scripts/smoke_test.py agent lab-new
+python scripts/notify_test.py link lab-new     # cross-account wiring
+python scripts/load_test.py lab-new --yes      # load balancing and scale up/down
 ```
-
-### 5. Start the Backend
-
-```bash
-python run_local.py
-```
-
-You should see:
-```
-Starting direct Groq Python server on http://127.0.0.1:3001...
-```
-
-### 6. Start the Frontend
-
-In a separate terminal:
-
-```bash
-cd frontend
-npm run dev
-```
-
-Open **http://localhost:3000** in your browser.
-
-### 7. Try It Out!
-
-- 🎤 Click the microphone and say: *"What's the weather in Paris?"*
-- ⌨️ Or type: *"Can I go hiking in Tokyo tomorrow?"*
-- 🌍 Try speaking in another language — say *"Quel temps fait-il à Lyon?"* in French!
-
----
-
-## 📁 Project Structure
-
-```
-wx-agent/
-├── run_local.py                    # Local dev server (Groq-powered)
-├── template.yaml                   # AWS SAM infrastructure definition
-├── .env.example                    # Environment variable reference
-│
-├── lambdas/
-│   └── agent-handler/
-│       ├── agent.py                # Strands Agent setup + model caching
-│       ├── handler.py              # AWS Lambda entry point (production)
-│       ├── prompts.py              # System prompt (scoped to weather only)
-│       ├── tools.py                # 4 weather tools (OWM, NWS, GDACS)
-│       ├── cli.py                  # CLI interface for testing
-│       └── requirements.txt
-│
-└── frontend/
-    ├── pages/
-    │   ├── index.js                # Main dashboard page
-    │   └── api/
-    │       └── alerts.js           # GDACS proxy with 5-min cache
-    ├── components/
-    │   ├── AppShell.js             # Root layout with ambient effects
-    │   ├── TopBar.js               # Search + language selector
-    │   ├── WeatherCard.js          # Current conditions display
-    │   ├── HourlyTimeline.js       # 24-hour horizontal forecast
-    │   ├── ForecastList.js         # 5-day forecast sidebar
-    │   ├── AlertBanner.js          # Weather alert notifications
-    │   ├── VoiceInput.js           # Mic + text chat bar
-    │   ├── ChatHistory.js          # Conversation bubbles
-    │   ├── AudioPlayer.js          # TTS playback with visualizer
-    │   ├── SuggestionChips.js      # Quick-start prompts
-    │   ├── SkeletonCard.js         # Loading placeholder
-    │   └── ErrorToast.js           # Error notifications
-    ├── lib/
-    │   ├── api.js                  # Backend + Open-Meteo API layer
-    │   └── i18n.js                 # UI translation dictionaries
-    └── styles/
-        └── globals.css             # Design system + animations
-```
-
----
-
-## 🔄 How It Works
-
-### Voice Flow
-
-```
-User speaks → MediaRecorder captures audio
-    → POST /transcribe (Groq Whisper)
-    → Returns { text, language }
-    → Frontend updates language dropdown
-    → POST /query with { text, lang, contextLocation }
-    → Strands Agent calls weather tools (with lang param)
-    → Agent responds in detected language
-    → Response displayed + spoken via TTS
-```
-
-### Language Propagation
-
-The detected language flows through every layer:
-
-| Layer | How Language Is Used |
-|-------|---------------------|
-| **Whisper** | Detects language from audio, returns ISO-639-1 code |
-| **Frontend** | Updates `selectedLang` state → propagates to all components |
-| **i18n.js** | Translates static UI labels (Humidity, Wind, etc.) |
-| **Agent Prompt** | `IMPORTANT INSTRUCTION: You must ALWAYS respond in '{lang}'` |
-| **OWM API** | `&lang=fr` returns localized weather descriptions |
-| **Forecast dates** | `toLocaleDateString(lang)` renders localized day names |
-
-### Context Awareness
-
-When you view the dashboard for "Seattle", the agent automatically knows:
-
-> *"Context: The user is currently viewing the dashboard for Seattle, US. If they ask a question without specifying a location, assume they mean Seattle, US."*
-
-This is injected into the system prompt dynamically, so you can ask *"Will it rain tomorrow?"* without repeating the city name.
-
----
-
-## ☁️ Deployment
-
-### AWS SAM (Production)
-
-```bash
-# Build
-sam build
-
-# Deploy (guided first time)
-sam deploy --guided
-```
-
-After deployment, SAM outputs your API Gateway URL. Set it in your frontend hosting platform:
-
-```env
-NEXT_PUBLIC_API_URL=https://abcdef123.execute-api.us-east-1.amazonaws.com/Prod/query
-```
-
-### Frontend (Vercel)
-
-```bash
-cd frontend
-npx vercel
-```
-
-Set `NEXT_PUBLIC_API_URL` in the Vercel dashboard environment variables.
-
----
-
-## 🔒 Security
-
-- **Scoped agent:** The system prompt strictly limits the agent to weather-only conversations. Prompt injection attempts are treated as out-of-scope requests and declined.
-- **No secrets in code:** All API keys are loaded from environment variables. `.env` and `.env.local` are gitignored.
-- **CORS configured:** Both local and production backends set appropriate CORS headers.
-- **Custom User-Agent:** All outbound HTTP requests use `WeatherBuddy/1.0` to avoid bot-blocking by external APIs.
-
----
-
-## 📜 License
-
-This project was built for the **FirstCommit Hackathon**. Please check with the repository owner for licensing details.
-
----
-
-<p align="center">
-  Built with ❤️ using AWS Strands Agents, Groq, and Next.js
-</p>
+Add `--dry-run` to `deploy` to preview commands. `--standalone` deploys the agent without the platform.

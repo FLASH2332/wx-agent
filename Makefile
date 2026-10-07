@@ -1,6 +1,6 @@
-.PHONY: build validate deploy deploy-guided test
+.PHONY: build validate deploy deploy-guided test run docker-run deploy-check deploy-container
 
-# Build both Lambdas via the makefile method (uv installs deps).
+# Build the Lambdas via the makefile method (uv installs deps).
 build:
 	sam build
 
@@ -16,7 +16,21 @@ deploy-guided: build
 deploy: build
 	sam deploy
 
-# Run the offline unit tests for both Lambdas.
+# Offline unit tests (no network, no AWS, no LLM keys needed).
 test:
-	cd lambdas/agent-handler && .venv/Scripts/python -m pytest -q
-	cd lambdas/tts-handler && .venv/Scripts/python -m pytest -q
+	python -m pytest -q agent_service/tests
+
+# Local API server on http://127.0.0.1:3001
+run:
+	python -m agent_service
+
+# Container image (agent_service/Dockerfile) and AWS deployment (docs/05-container-deploy.md)
+docker-run:
+	docker compose up --build
+
+ENV ?= lab-new
+deploy-check:
+	python scripts/deploy.py check $(ENV)
+
+deploy-container:
+	python scripts/deploy.py deploy $(ENV)

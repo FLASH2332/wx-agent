@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, Trash2 } from 'lucide-react';
+import { MessageCircle, Trash2, Volume2, VolumeX } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import TopBar from '@/components/TopBar';
 import VoiceInput from '@/components/VoiceInput';
@@ -13,7 +13,8 @@ import ErrorToast from '@/components/ErrorToast';
 import SuggestionChips from '@/components/SuggestionChips';
 import ComparisonCard from '@/components/ComparisonCard';
 import ActivityChips from '@/components/ActivityChips';
-import { queryAgent, fetchInstantWeather } from '@/lib/api';
+import { queryAgent, fetchInstantWeather, synthesizeSpeech } from '@/lib/api';
+import { playSpeech, stopSpeech } from '@/lib/speech';
 import { skyFor } from '@/lib/skyTheme';
 
 export default function Home() {
@@ -27,7 +28,8 @@ export default function Home() {
   
   const [messages, setMessages] = useState([]);
   const [latestResponse, setLatestResponse] = useState("");
-  const [latestAudio, setLatestAudio] = useState("");
+  // Spoken replies are opt-in: each one costs a TTS call (Polly) or uses free browser voices.
+  const [speakEnabled, setSpeakEnabled] = useState(false);
   const [uiMode, setUiMode] = useState("dashboard");
   const [comparisonData, setComparisonData] = useState(null);
   const [streamingText, setStreamingText] = useState("");
@@ -42,6 +44,21 @@ export default function Home() {
   useEffect(() => {
     endOfChatRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, appState]);
+
+  useEffect(() => {
+    try {
+      setSpeakEnabled(localStorage.getItem('wb_speak') === '1');
+    } catch (e) { /* storage unavailable */ }
+  }, []);
+
+  const toggleSpeak = () => {
+    const next = !speakEnabled;
+    setSpeakEnabled(next);
+    if (!next) stopSpeech();
+    try {
+      localStorage.setItem('wb_speak', next ? '1' : '0');
+    } catch (e) { /* storage unavailable */ }
+  };
 
   useEffect(() => {
     // On initial load, try to get the user's location to populate the dashboard
@@ -117,7 +134,8 @@ export default function Home() {
     setErrorMsg("");
     
     try {
-      // Pass existing messages to backend (Strands agent(text) appends the user turn automatically)
+      // Send the visible text history; the server keeps only the last few turns for the model
+      // and returns the updated text-only history (never raw tool/reasoning blocks).
       const contextLocation = weatherData?.location || null;
       
       const localTime = new Date().toISOString();
@@ -138,7 +156,6 @@ export default function Home() {
       if (!isSilentLocationUpdate) {
         const fullText = response.response_text || "";
         setLatestResponse(fullText);
-        setLatestAudio(response.audio_b64 || "");
         setUiMode(response.ui_mode || "chat");
         setComparisonData(response.comparison_data || null);
         if (response.lang) {
@@ -153,6 +170,11 @@ export default function Home() {
           built += (i === 0 ? "" : " ") + words[i];
           const snapshot = built;
           setTimeout(() => setStreamingText(snapshot), i * 35);
+        }
+        if (speakEnabled && fullText) {
+          synthesizeSpeech(fullText, response.lang || activeLang)
+            .then(playSpeech)
+            .catch((e) => console.warn("Speech synthesis failed", e));
         }
       }
       
@@ -209,6 +231,7 @@ export default function Home() {
   };
 
   const handleClearChat = () => {
+    stopSpeech();
     setMessages([]);
     setLatestResponse("");
     setStreamingText("");
@@ -216,7 +239,7 @@ export default function Home() {
 
   const dock = (
     <div className="max-w-3xl mx-auto w-full px-4 pt-3 pb-4">
-      <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} appState={appState} currentLang={selectedLang} />
+      <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} onError={setErrorMsg} appState={appState} currentLang={selectedLang} />
     </div>
   );
 
@@ -228,6 +251,16 @@ export default function Home() {
       <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/10 shrink-0">
         <MessageCircle className="w-4 h-4 text-white/60" strokeWidth={1.75} />
         <h3 className="text-sm font-medium text-white/70 flex-1">Weather Buddy</h3>
+        <button
+          onClick={toggleSpeak}
+          className={`p-1.5 rounded-lg transition-colors hover:bg-white/[0.06] ${speakEnabled ? 'text-white/80' : 'text-white/30 hover:text-white/60'}`}
+          title={speakEnabled ? "Turn off spoken replies" : "Turn on spoken replies"}
+          aria-pressed={speakEnabled}
+        >
+          {speakEnabled
+            ? <Volume2 className="w-3.5 h-3.5" strokeWidth={1.75} />
+            : <VolumeX className="w-3.5 h-3.5" strokeWidth={1.75} />}
+        </button>
         {messages.length > 0 && (
           <button
             onClick={handleClearChat}

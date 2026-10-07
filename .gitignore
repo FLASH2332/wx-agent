@@ -6,7 +6,20 @@ samconfig.toml
 .idea/
 .vscode/
 AGENTS.md
-AGENTS_1.md
-Untitled.md
 cli_audio/
 .claude
+venv/*
+
+.cache/
+__pycache__/
+.pytest_cache/
+
+# local deploy state (stack outputs of each account), never commit
+infra/.state/
+
+# notes, plans and assistant/session files: local only, not part of the code
+docs/
+.remember/
+.superpowers/
+.claude/
+*.backup

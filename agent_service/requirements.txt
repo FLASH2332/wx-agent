@@ -1,0 +1,4 @@
+strands-agents==1.56.0
+litellm==1.102.0
+dateparser==1.4.3
+boto3>=1.35
