@@ -1,12 +1,12 @@
-# Weather Buddy — Technical Sequence Flows & Interaction Diagrams
+# Weather Buddy — Complete Sequence & State Interaction Flows
 
-This document details the exact runtime communication patterns, lifecycle events, and inter-service sequences within Weather Buddy.
+This specification documents the runtime execution flows, inter-service protocol exchanges, asynchronous message transitions, and failure recovery sequences for Weather Buddy.
 
 ---
 
-## 1. End-to-End Voice Query Execution Sequence
+## 1. End-to-End Voice Ingestion & Speech Synthesis Flow
 
-The diagram below traces the end-to-end journey from a user pressing the microphone button in the browser to synthesized audio playback.
+The diagram below details the entire request-response cycle from physical microphone button actuation in the browser to synthesized audio playback.
 
 ```
 User          Frontend (React)         Groq Whisper          Agent Lambda           OWM API          TTS Lambda (Polly)
@@ -49,52 +49,49 @@ User          Frontend (React)         Groq Whisper          Agent Lambda       
 
 ---
 
-## 2. Autonomous Agent Tool-Execution Loop
+## 2. Autonomous Agent Tool Decision Loop
 
-The Strands Agent manages an autonomous evaluation loop to retrieve accurate context without hallucination.
+Weather Buddy's agent uses autonomous tool loops to retrieve sensor data before synthesizing output:
 
 ```
-                     ┌──────────────────────────────┐
-                     │   User Query + Dashboard City│
-                     └──────────────┬───────────────┘
-                                    │
-                                    ▼
-                     ┌──────────────────────────────┐
-                     │    Context Assembler         │
-                     │  (Prompt + System Rules)     │
-                     └──────────────┬───────────────┘
-                                    │
-                                    ▼
-                     ┌──────────────────────────────┐
-                     │   LiteLLM Reasoning Turn     │
-                     └──────────────┬───────────────┘
-                                    │
-                         Is Tool Call Required?
-                                    │
-                   ┌────────────────┴────────────────┐
-                   ▼ YES                             ▼ NO
-    ┌──────────────────────────────┐   ┌──────────────────────────────┐
-    │  Execute Identified Tool     │   │   Final Answer Formatted     │
-    │  • get_current_weather       │   │   in User's Language         │
-    │  • get_forecast              │   └──────────────┬───────────────┘
-    │  • get_alerts                │                  │
-    │  • activity_advisor          │                  ▼
-    └──────────────┬───────────────┘   ┌──────────────────────────────┐
-                   │                   │   Trigger Speech Synthesis   │
-                   ▼                   └──────────────────────────────┘
-    ┌──────────────────────────────┐
-    │ Observation Returned to LLM  │
-    └──────────────┬───────────────┘
-                   │
-                   ▼
-         Loop to LiteLLM Turn
+                          [User Meteorological Query]
+                                       │
+                                       ▼
+                       ┌───────────────────────────────┐
+                       │   Prompt & Context Assembly   │
+                       └───────────────┬───────────────┘
+                                       │
+                                       ▼
+                       ┌───────────────────────────────┐
+                       │   LiteLLM Inference Turn      │
+                       └───────────────┬───────────────┘
+                                       │
+                            Tool Execution Required?
+                                       │
+                     ┌─────────────────┴─────────────────┐
+                     ▼ YES                               ▼ NO
+      ┌───────────────────────────────┐   ┌───────────────────────────────┐
+      │   Execute Meteorological Tool │   │  Final Multilingual Response  │
+      │   • get_current_weather       │   │  Formatted in User's Language │
+      │   • get_forecast              │   └───────────────┬───────────────┘
+      │   • get_alerts                │                   │
+      │   • activity_advisor          │                   ▼
+      └───────────────┬───────────────┘   ┌───────────────────────────────┐
+                      │                   │  Boto3 Invoke TtsFunction     │
+                      ▼                   └───────────────────────────────┘
+      ┌───────────────────────────────┐
+      │  Incorporate Tool Observation │
+      └───────────────┬───────────────┘
+                      │
+                      ▼
+            Loop to Next LLM Turn
 ```
 
 ---
 
-## 3. Proactive EventBridge & SNS Notification Flow
+## 3. Scheduled Daily Alert & SNS Notification Pipeline
 
-Weather Buddy monitors hazardous weather conditions every morning via an automated serverless cron schedule.
+The proactive notification pipeline executes without user interaction:
 
 ```
 Amazon EventBridge         Alert Lambda (Python 3.12)           OpenWeatherMap API           Amazon SNS Topic         User Email Inbox
@@ -120,26 +117,41 @@ Amazon EventBridge         Alert Lambda (Python 3.12)           OpenWeatherMap A
 
 ---
 
-## 4. Cold-Start Mitigation & Container Lifecycle
-
-To keep serverless execution under 1.5 seconds, Weather Buddy leverages container warm-start caching:
+## 4. Upstream Rate-Limit & Network Resilience Sequences
 
 ```
-[Cold Start Invocation]
-  1. Lambda Runtime Initialization
-  2. Module Imports (boto3, strands_agents, litellm)
-  3. Pre-instantiate boto3 Lambda Client
-  4. Cache LiteLLM Model Registry
-  5. Execute handler.handler()
-  6. Response returned to client
-         │
-         ▼
-[Container Kept Warm]
-         │
-         ▼
-[Warm Invocations (Subsequent Calls)]
-  1. Skip Module Imports (0 ms)
-  2. Reuse pre-instantiated boto3 client (0 ms)
-  3. Reuse memory model registry (0 ms)
-  4. Execute handler.handler() immediately (~200ms latency reduction)
+Agent Lambda                           OpenWeatherMap API                   Exponential Backoff Queue
+     │                                         │                                      │
+     ├─ Query /weather?q=Seattle ─────────────►│                                      │
+     │                                         │                                      │
+     │◄─ HTTP 429 Too Many Requests ───────────┤                                      │
+     │                                         │                                      │
+     ├─ Trigger Jittered Retry ──────────────────────────────────────────────────────►│
+     │                                                                                ├─ Wait 400ms + random(0, 150ms)
+     │◄─ Wakeup Signal ───────────────────────────────────────────────────────────────┘
+     │                                         │
+     ├─ Retry Query /weather ─────────────────►│
+     │                                         ├─ Evaluate Request
+     │◄─ HTTP 200 OK (WeatherData JSON) ───────┴─ Return Sensor Metrics
+```
+
+---
+
+## 5. Amazon Polly Multilingual Fallback Sequence
+
+```
+Agent Lambda                           TtsFunction (Polly Handler)                 Amazon Polly Service
+     │                                              │                                       │
+     ├─ Invoke {text: "...", lang: "ta"} ──────────►│                                       │
+     │                                              ├─ Lookup Voice ID (Tamil)              │
+     │                                              ├─ Is Neural Voice Available?           │
+     │                                              ├─── NO: Fallback to Standard Voice     │
+     │                                              │    (Valluvar / Standard Engine)       │
+     │                                              │                                       │
+     │                                              ├─ polly.synthesize_speech() ──────────►│
+     │                                              │  (Engine: standard, VoiceId: Valluvar)│
+     │                                              │◄─ AudioStream (MP3 Bytes) ────────────┘
+     │                                              │
+     │                                              ├─ Encode Bytes to Base64 String
+     │◄─ Return {audio_b64: "SUQzBA..."} ───────────┘
 ```
