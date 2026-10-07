@@ -19,7 +19,8 @@
   <a href="#getting-started">Getting Started</a> •
   <a href="#project-structure">Project Structure</a> •
   <a href="#how-it-works">How It Works</a> •
-  <a href="#deployment">Deployment</a>
+  <a href="#deployment">Deployment</a> •
+  <a href="#-contributing">Contributing</a>
 </p>
 
 ---
@@ -436,6 +437,10 @@ cd lambdas/tts-handler && pytest -q
 - **No secrets in code:** All API keys are loaded from environment variables. `.env` and `.env.local` are gitignored.
 - **CORS configured:** Both local and production backends set appropriate CORS headers.
 - **Custom User-Agent:** All outbound HTTP requests use `WeatherBuddy/1.0` to avoid bot-blocking by external APIs.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please check out [`CONTRIBUTING.md`](file:///CONTRIBUTING.md) for step-by-step instructions on setting up your local environment, running offline test suites (`make test`), and guidelines for submitting pull requests.
 
 ---
 
