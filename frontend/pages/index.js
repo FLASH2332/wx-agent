@@ -14,7 +14,7 @@ import SuggestionChips from '@/components/SuggestionChips';
 import { queryAgent, fetchInstantWeather } from '@/lib/api';
 import { skyFor } from '@/lib/skyTheme';
 
-export default function Home() {
+export default function Home({ authUser, onLogout }) {
   const [appState, setAppState] = useState('idle');
   
   const [weatherData, setWeatherData] = useState(null);
@@ -227,6 +227,8 @@ export default function Home() {
         currentLang={selectedLang}
         onLangChange={setSelectedLang}
         onLocationSearch={handleManualLocation}
+        authUser={authUser}
+        onLogout={onLogout}
       />
 
       {/* DASHBOARD - MULTI-COLUMN LAYOUT */}
