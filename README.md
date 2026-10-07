@@ -405,10 +405,198 @@ Contributions are warmly welcomed! Please review our **[Contributor Guide (CONTR
 
 ---
 
+## 🔐 Authentication & Azure PostgreSQL
+
+Weather Buddy includes a full user authentication system backed by **Azure Database for PostgreSQL – Flexible Server**.
+
+### Architecture Overview
+
+```
+Browser  ──►  Next.js (frontend/)  ──►  PostgreSQL (Azure)
+                   │
+                   ├─ /login          ─►  POST /api/auth/login
+                   ├─ /signup         ─►  POST /api/auth/signup
+                   ├─ /               ─►  GET  /api/auth/me  (session check)
+                   └─ TopBar logout   ─►  POST /api/auth/logout
+```
+
+### 1. Azure PostgreSQL Setup
+
+#### Prerequisites
+```bash
+# Install Azure CLI
+brew install azure-cli
+
+# Log in
+az login
+
+# Verify subscription
+az account show
+```
+
+#### Create Azure PostgreSQL Flexible Server
+```bash
+# Create resource group (or reuse existing)
+az group create --name wx-agent-rg --location eastus
+
+# Create PostgreSQL Flexible Server (Burstable B1ms — free-tier friendly)
+az postgres flexible-server create \
+  --resource-group wx-agent-rg \
+  --name wx-agent-db-server \
+  --admin-user wxadmin \
+  --admin-password "<your-secure-password>" \
+  --sku-name Standard_B1ms \
+  --tier Burstable \
+  --version 16 \
+  --public-access 0.0.0.0 \
+  --location eastus
+
+# Create the database
+az postgres flexible-server db create \
+  --resource-group wx-agent-rg \
+  --server-name wx-agent-db-server \
+  --database-name wx_agent_db
+```
+
+### 2. Required Environment Variables
+
+Add these to `frontend/.env.local` (never commit this file):
+
+```bash
+# Option 1: Full connection string (recommended for Azure)
+DATABASE_URL=postgresql://wxadmin:<password>@wx-agent-db-server.postgres.database.azure.com:5432/wx_agent_db?sslmode=require
+
+# Option 2: Individual variables (used if DATABASE_URL is blank)
+DB_HOST=wx-agent-db-server.postgres.database.azure.com
+DB_PORT=5432
+DB_NAME=wx_agent_db
+DB_USER=wxadmin
+DB_PASSWORD=<your-secure-password>
+
+# JWT secret — generate with: npm run db:generate-secret
+JWT_SECRET=<64-char-random-hex>
+```
+
+> **Generate a JWT secret:**
+> ```bash
+> cd frontend && npm run db:generate-secret
+> ```
+
+### 3. Database Schema
+
+```sql
+CREATE TABLE users (
+  id            SERIAL PRIMARY KEY,
+  name          VARCHAR(100)  NOT NULL,
+  email         VARCHAR(255)  UNIQUE NOT NULL,
+  password_hash TEXT          NOT NULL,       -- bcrypt, 12 rounds
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_email ON users(email);
+```
+
+### 4. Running Migrations
+
+```bash
+cd frontend
+
+# Create the users table (idempotent — safe to re-run)
+npm run db:migrate
+```
+
+### 5. Starting the Backend (Next.js API Routes)
+
+The authentication backend runs **inside Next.js** as serverless API routes — no separate server needed.
+
+```bash
+cd frontend
+npm install
+npm run dev      # starts on http://localhost:3000
+```
+
+### 6. Starting the Frontend
+
+```bash
+cd frontend
+npm run dev      # http://localhost:3000
+```
+
+### 7. API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/auth/signup` | Register new user; sets HTTP-only JWT cookie |
+| `POST` | `/api/auth/login` | Authenticate user; sets HTTP-only JWT cookie |
+| `GET` | `/api/auth/me` | Return current session user (401 if not logged in) |
+| `POST` | `/api/auth/logout` | Clear session cookie |
+
+### 8. Signup Flow
+
+```
+User fills name/email/password/confirm → Client validates →
+POST /api/auth/signup → Server validates → Check duplicate email →
+bcrypt.hash(password, 12) → INSERT INTO users → Set JWT cookie →
+Redirect to /  (chat interface)
+```
+
+### 9. Login Flow
+
+```
+User fills email/password → Client validates →
+POST /api/auth/login → Normalise email → SELECT user →
+bcrypt.compare(password, hash) → Set JWT cookie →
+Redirect to /  (existing chat interface)
+```
+
+### 10. Authentication Flow
+
+- Session is stored as a **signed JWT** in an **HTTP-only, SameSite=Lax** cookie named `wx_session`
+- Cookie is **never accessible to JavaScript** — immune to XSS token theft
+- JWT is verified server-side on every `/api/auth/me` call
+- Token expires after **7 days**
+- Frontend calls `/api/auth/me` on every page mount to restore session state
+- Unauthenticated visits to `/` redirect to `/login`
+- Authenticated visits to `/login` or `/signup` redirect to `/`
+
+### 11. Frontend ↔ Backend Communication
+
+- Auth pages (`/login`, `/signup`) send `fetch()` calls to `/api/auth/*` routes
+- Same-origin — no CORS required (Next.js serves both frontend and API)
+- Cookies are sent automatically by the browser with `credentials: include` (same-origin, so default)
+
+### 12. Verifying Users in PostgreSQL
+
+```bash
+# Connect via Azure CLI
+az postgres flexible-server connect \
+  --name wx-agent-db-server \
+  --admin-user wxadmin \
+  --database-name wx_agent_db
+
+# Or via psql directly
+psql "postgresql://wxadmin:<password>@wx-agent-db-server.postgres.database.azure.com/wx_agent_db?sslmode=require"
+
+# Verify users exist (confirm password_hash is NOT the original password)
+SELECT id, name, email, created_at, LEFT(password_hash, 7) AS hash_prefix FROM users;
+```
+
+Expected output:
+```
+ id |    name    |        email         |         created_at          | hash_prefix
+----+------------+----------------------+------------------------------+-------------
+  1 | Test User  | test@example.com     | 2026-10-07 17:00:00+00      | $2b$12$
+```
+
+The `hash_prefix` of `$2b$12$` confirms bcrypt with 12 rounds — **never the original password**.
+
+---
+
 ## 📜 License
 
 This project was built for the **FirstCommit Hackathon**. Please check with the repository owners for licensing and usage terms.
 
 <p align="center">
-  Built with ❤️ using AWS Strands Agents, Groq, Amazon Polly, and Next.js
+  Built with ❤️ using AWS Strands Agents, Groq, Amazon Polly, Next.js, and Azure PostgreSQL
 </p>
