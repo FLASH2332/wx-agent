@@ -86,49 +86,55 @@ Built for the **FirstCommit Hackathon**, Weather Buddy demonstrates how modern A
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        FRONTEND                             │
-│              Next.js 14 + Tailwind CSS + Lucide             │
-│                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌──────────┐  │
-│  │  TopBar   │  │ Weather  │  │  Forecast  │  │  Alert   │  │
-│  │ (i18n)   │  │  Card    │  │   List     │  │ Banner   │  │
-│  └──────────┘  └──────────┘  └────────────┘  └──────────┘  │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │        VoiceInput (MediaRecorder + Chat Bar)         │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                    │                    │                    │
-│            POST /transcribe      POST /query                │
-└────────────────────┼────────────────────┼───────────────────┘
-                     │                    │
-┌────────────────────┼────────────────────┼───────────────────┐
-│                  BACKEND (Python)                           │
-│                                                             │
-│  ┌─────────────────┐         ┌──────────────────────────┐   │
-│  │   /transcribe   │         │        /query             │   │
-│  │  Groq Whisper   │         │   Strands Agent + Tools   │   │
-│  │  whisper-large  │         │  (Groq Llama 3.3 70B)    │   │
-│  └─────────────────┘         └──────────────────────────┘   │
-│                                       │                     │
-│                         ┌─────────────┼─────────────┐       │
-│                         │             │             │       │
-│                   ┌─────┴─────┐ ┌─────┴────┐ ┌─────┴────┐  │
-│                   │  OWM API  │ │ NWS/GDACS│ │ Activity │  │
-│                   │ (weather) │ │ (alerts) │ │ Advisor  │  │
-│                   └───────────┘ └──────────┘ └──────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                               FRONTEND                                  │
+│                 Next.js 14 + Tailwind CSS + Lucide React                │
+│                                                                         │
+│  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌─────────┐  │
+│  │  TopBar   │  │ Weather  │  │  Forecast  │  │  Alert   │  │Language │  │
+│  │ (Search)  │  │  Card    │  │   List     │  │  Pill    │  │  Badge  │  │
+│  └──────────┘  └──────────┘  └────────────┘  └──────────┘  └─────────┘  │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │          VoiceInput (MediaRecorder Audio + Chat Input Bar)        │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                     │                                   │               │
+│             POST /transcribe                    POST /query             │
+└─────────────────────┼───────────────────────────────────┼───────────────┘
+                      │                                   │
+                      ▼                                   ▼
+┌───────────────────────────────────┐   ┌─────────────────────────────────┐
+│     TRANSCRIPTION & INFERENCE     │   │      AWS SERVERLESS BACKEND     │
+│                                   │   │                                 │
+│      Groq Whisper API             │   │   AgentFunction (Lambda)        │
+│      (whisper-large-v3)           │   │   • Strands Agent tool loop     │
+│      • Returns text + ISO lang    │   │   • LiteLLM (Groq / Ollama EC2) │
+└───────────────────────────────────┘   │   • Lambda Function URL (no 29s)│
+                                        └───┬─────────────┬───────────┬───┘
+                                            │             │           │
+                     ┌──────────────────────┘             │           └──────────┐
+                     ▼                                    ▼                      ▼
+        ┌─────────────────────────┐          ┌───────────────────────┐  ┌──────────────────┐
+        │       AGENT TOOLS       │          │  TTS LAMBDA (Polly)   │  │ PROACTIVE ALERTS │
+        │  • OWM API (Current/FC) │          │  • Amazon Polly       │  │ • EventBridge    │
+        │  • NWS / GDACS (Alerts) │          │  • Multilingual voice │  │   cron (1:30 UTC)│
+        │  • Activity Advisor     │          │  • Base64 audio b64   │  │ • AlertFunction  │
+        │  • Strict weather scope │          │  • Internal invoke    │  │ • SNS Email topic│
+        └─────────────────────────┘          └───────────────────────┘  └──────────────────┘
 ```
 
-### Dual-Mode Backend
+### Backend Modes & Execution Models
 
-Weather Buddy ships with **two backend entry points** for maximum flexibility:
+Weather Buddy provides two distinct operational environments:
 
-| Mode | File | Use Case |
-|------|------|----------|
-| **Local Development** | `run_local.py` | Standalone Python HTTP server on port 3001. Zero AWS dependencies. Uses Groq as the LLM provider. |
-| **AWS Production** | `handler.py` + `template.yaml` | Serverless deployment via AWS SAM. API Gateway + Lambda. Uses Bedrock or Groq. |
+| Mode | Entrypoint / Infrastructure | LLM Engine | Audio & Alerts |
+|------|-----------------------------|------------|----------------|
+| **Local Development** | `run_local.py` (HTTP on `http://127.0.0.1:3001`) | Groq API / local Ollama via LiteLLM | Local browser audio / console output |
+| **AWS Serverless Production** | `template.yaml` (SAM Tri-Lambda Architecture) | LiteLLM routing to Groq or self-hosted Ollama on EC2 | Amazon Polly (`tts-handler`) + EventBridge/SNS (`alert-handler`) |
 
-Both entry points share the same agent code (`agent.py`), tools (`tools.py`), and prompt (`prompts.py`).
+#### Tri-Lambda Architecture Overview
+1. **`agent-handler` (Core Brain)**: Receives `/query`, retrieves weather context, drives Strands Agent tool executions, and coordinates with `tts-handler`. Exposed via both API Gateway and a direct Lambda Function URL (which avoids API Gateway's 29-second hard timeout for long LLM inference chains).
+2. **`tts-handler` (Voice Synthesis)**: Dedicated Lambda invoked synchronously via boto3 from `agent-handler` to synthesize audio using Amazon Polly neural voices with automatic language detection matching.
+3. **`alert-handler` (Proactive Notifications)**: Triggered daily by an Amazon EventBridge schedule rule (`cron(30 1 * * ? *)` = 7:00 AM IST) to evaluate current alerts for the configured alert location and broadcast warning bulletins through AWS SNS to subscribed emails.
 
 ---
 
