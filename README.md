@@ -1,25 +1,33 @@
 <p align="center">
-  <img src="https://openweathermap.org/img/wn/02d@4x.png" width="120" alt="Weather Buddy" />
+  <img src="https://openweathermap.org/img/wn/02d@4x.png" width="120" alt="Weather Buddy Logo" />
 </p>
 
 <h1 align="center">🌦️ Weather Buddy</h1>
 
 <p align="center">
-  <strong>A voice-first, multilingual AI weather assistant powered by AWS Strands Agents and Groq.</strong>
+  <strong>An enterprise-grade, voice-first, multilingual AI meteorological assistant powered by AWS Strands Agents, Groq Whisper, Amazon Polly, and Next.js 14.</strong>
 </p>
 
 <p align="center">
-  <em>Ask about the weather in any language. Get answers in that same language — spoken aloud.</em>
+  <em>Speak in any language. Receive answers spoken natively in that same tongue — backed by real-time meteorological sensor feeds.</em>
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#tech-stack">Tech Stack</a> •
-  <a href="#getting-started">Getting Started</a> •
-  <a href="#project-structure">Project Structure</a> •
-  <a href="#how-it-works">How It Works</a> •
-  <a href="#deployment">Deployment</a> •
+  <a href="https://aws.amazon.com/serverless/sam/"><img src="https://img.shields.io/badge/AWS%20SAM-Serverless-orange?style=flat-square&logo=amazon-aws" alt="AWS SAM" /></a>
+  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python" alt="Python 3.12" /></a>
+  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-14.2-black?style=flat-square&logo=next.js" alt="Next.js" /></a>
+  <a href="https://groq.com"><img src="https://img.shields.io/badge/Inference-Groq%20Cloud-f55036?style=flat-square" alt="Groq" /></a>
+  <a href="https://aws.amazon.com/polly/"><img src="https://img.shields.io/badge/Speech-Amazon%20Polly-purple?style=flat-square" alt="Amazon Polly" /></a>
+  <a href="https://litellm.ai"><img src="https://img.shields.io/badge/LLM%20Router-LiteLLM-green?style=flat-square" alt="LiteLLM" /></a>
+</p>
+
+<p align="center">
+  <a href="#-key-features">Key Features</a> •
+  <a href="#-system-architecture">Architecture</a> •
+  <a href="#-documentation-hub">Documentation Hub</a> •
+  <a href="#-project-structure">Project Structure</a> •
+  <a href="#-getting-started">Getting Started</a> •
+  <a href="#-deployment-guide">Deployment</a> •
   <a href="#-contributing">Contributing</a>
 </p>
 
@@ -27,242 +35,150 @@
 
 ## 🎯 What Is Weather Buddy?
 
-Weather Buddy is a **voice-first, AI-powered weather dashboard** that lets you ask about the weather using natural language — by speaking or typing — in **any language**. It combines a conversational AI agent with a rich, real-time weather dashboard that adapts its entire interface to the language you speak.
+Weather Buddy is an open-source, voice-first **meteorological intelligence dashboard and conversational agent**. It allows users to ask complex weather and outdoor activity questions naturally—by speaking or typing—in **over 100 languages**.
 
-Built for the **FirstCommit Hackathon**, Weather Buddy demonstrates how modern AI agent frameworks (AWS Strands Agents), speech-to-text (Groq Whisper), and large language models can come together to create a seamless, multilingual user experience that goes far beyond a simple chatbot.
+Rather than acting as a generic conversational chatbot, Weather Buddy combines a strictly scoped **AWS Strands Agent reasoning loop** with real-time sensor observations from **OpenWeatherMap**, disaster hazard feeds from **GDACS**, and government meteorological alerts from the **US National Weather Service (NWS)**.
 
----
-
-## ✨ Features
-
-### 🎙️ Voice-First Interaction
-- **Native speech recognition** powered by [Groq Whisper](https://console.groq.com/docs/speech-text) (`whisper-large-v3`).
-- Speak in **any language** — Whisper automatically detects the language from your audio.
-- The microphone button is integrated directly into the chat bar for a unified, modern UX.
-- Text input is also fully supported for users who prefer typing.
-
-### 🌍 Full Multilingual Support
-- **Adaptive language detection:** When you speak in French, Hindi, Tamil, German, Spanish, or any other language, the entire application adapts:
-  - The **AI agent responds in your language** natively (no translation layer — the LLM speaks it directly).
-  - The **UI labels translate** ("Humidity" → "Humidité", "Wind" → "हवा") via an i18n system.
-  - The **weather descriptions translate** natively via OpenWeatherMap's `lang` parameter ("scattered clouds" → "nuages épars").
-  - The **forecast day names localize** ("Mon" → "lun." in French).
-  - The **language dropdown updates** automatically, even adding new languages dynamically if you speak one that isn't in the default list.
-
-### 🤖 AI-Powered Conversational Agent
-- Built on [AWS Strands Agents](https://github.com/strands-agents/strands-agents) — a production-grade agentic AI framework.
-- The agent has access to **4 specialized tools**:
-  | Tool | Purpose |
-  |------|---------|
-  | `get_current_weather` | Current temperature, humidity, wind, conditions |
-  | `get_forecast` | Multi-day daily forecast with highs, lows, and hourly timeline |
-  | `get_alerts` | Government-issued weather alerts (NWS for US, GDACS globally) |
-  | `activity_advisor` | Outdoor activity recommendations based on live weather data |
-- **Context-aware:** The agent knows which city dashboard you're currently viewing. If you ask "Will it rain tomorrow?" without specifying a location, it infers from your dashboard context.
-- **Strictly scoped:** The agent only answers weather-related questions. Off-topic requests are politely declined.
-
-### 📊 Rich Weather Dashboard
-- **Current conditions** with temperature, feels-like, humidity, wind speed, and weather icon.
-- **Hourly timeline** showing the next 24 hours of forecast data in a horizontally scrollable strip.
-- **5-day forecast** sidebar with daily highs/lows, precipitation probability, and conditions.
-- **Real-time weather alerts** from the National Weather Service (US) and GDACS (global), displayed as dismissable banners.
-- **Auto-geolocation:** On first load, the dashboard detects your browser's location and populates weather data automatically.
-- **Manual city search** via a search bar in the top navigation.
-
-### 🔊 Text-to-Speech
-- Agent responses are synthesized to speech via **Amazon Polly** (in production) and played back through a built-in audio player with visualizer bars.
-- The TTS language matches the detected user language for a seamless voice conversation.
-
-### 🎨 Polished UI
-- Glassmorphism design system with layered transparent shadows for depth.
-- Concentric border radii across all nested components (outer = inner + padding).
-- Staggered entrance animations with `cubic-bezier(0.2, 0, 0, 1)` easing.
-- `scale(0.96)` press feedback on all interactive buttons.
-- Tabular number formatting on all weather data so digits don't shift.
-- Icon stroke weights matched to adjacent text weight (1.5px regular, 2px semibold).
-- 44px minimum touch targets on all interactive elements.
+### Why It Stands Out
+- **Zero Translation Bottlenecks:** Unlike traditional voice bots that convert speech to English, query an LLM in English, and translate the text back, Weather Buddy identifies user language at the speech ingestion layer. The AI agent evaluates tools and articulates answers **natively in the target tongue**.
+- **Voice In, Voice Out:** Voice recordings captured via the browser's `MediaRecorder` API are transcribed in milliseconds via Groq Whisper Large v3, with responses synthesized into natural spoken audio via Amazon Polly neural voices.
+- **Strict Scope Isolation:** The conversational agent is protected by behavioral prompt sandboxing. It cannot be coerced into generating off-topic content, writing code, or acting as a general-purpose assistant.
+- **Dual Runtime Target:** Run 100% locally with zero cloud dependencies using Python and Ollama, or deploy to production as a high-scale serverless AWS SAM application.
 
 ---
 
-## 🏗️ Architecture
+## ✨ Key Features
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                               FRONTEND                                  │
-│                 Next.js 14 + Tailwind CSS + Lucide React                │
-│                                                                         │
-│  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌─────────┐  │
-│  │  TopBar   │  │ Weather  │  │  Forecast  │  │  Alert   │  │Language │  │
-│  │ (Search)  │  │  Card    │  │   List     │  │  Pill    │  │  Badge  │  │
-│  └──────────┘  └──────────┘  └────────────┘  └──────────┘  └─────────┘  │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │          VoiceInput (MediaRecorder Audio + Chat Input Bar)        │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                     │                                   │               │
-│             POST /transcribe                    POST /query             │
-└─────────────────────┼───────────────────────────────────┼───────────────┘
-                      │                                   │
-                      ▼                                   ▼
-┌───────────────────────────────────┐   ┌─────────────────────────────────┐
-│     TRANSCRIPTION & INFERENCE     │   │      AWS SERVERLESS BACKEND     │
-│                                   │   │                                 │
-│      Groq Whisper API             │   │   AgentFunction (Lambda)        │
-│      (whisper-large-v3)           │   │   • Strands Agent tool loop     │
-│      • Returns text + ISO lang    │   │   • LiteLLM (Groq / Ollama EC2) │
-└───────────────────────────────────┘   │   • Lambda Function URL (no 29s)│
-                                        └───┬─────────────┬───────────┬───┘
-                                            │             │           │
-                     ┌──────────────────────┘             │           └──────────┐
-                     ▼                                    ▼                      ▼
-        ┌─────────────────────────┐          ┌───────────────────────┐  ┌──────────────────┐
-        │       AGENT TOOLS       │          │  TTS LAMBDA (Polly)   │  │ PROACTIVE ALERTS │
-        │  • OWM API (Current/FC) │          │  • Amazon Polly       │  │ • EventBridge    │
-        │  • NWS / GDACS (Alerts) │          │  • Multilingual voice │  │   cron (1:30 UTC)│
-        │  • Activity Advisor     │          │  • Base64 audio b64   │  │ • AlertFunction  │
-        │  • Strict weather scope │          │  • Internal invoke    │  │ • SNS Email topic│
-        └─────────────────────────┘          └───────────────────────┘  └──────────────────┘
-```
+### 🎙️ Low-Latency Voice Ingestion
+- Integrated speech recognition powered by [Groq Whisper Cloud](https://console.groq.com/) (`whisper-large-v3`).
+- Automatic language identification directly from audio waveforms (supports 100+ languages and dialects).
+- Unified microphone toggle with real-time 60 FPS Fast Fourier Transform (FFT) visualizer bars.
+- Seamless fallback to keyboard text input with instant suggestion chips.
 
-### Backend Modes & Execution Models
+### 🌍 Adaptive Multilingual Localization
+- When you speak in French, Spanish, Hindi, German, Tamil, Japanese, or any supported language, the entire application adapts dynamically:
+  - The **Strands Agent reasons and replies natively** in that language without translation intermediaries.
+  - The **UI terminology updates instantly** ("Humidity" → "Humidité", "Wind" → "हवा") via reactive dictionaries.
+  - Meteorological conditions translate directly from OpenWeatherMap weather stations (`&lang=fr`).
+  - Forecast day names and hourly formats localize to target regional calendars.
 
-Weather Buddy provides two distinct operational environments:
+### 🤖 Autonomous Strands Agent Reasoning
+- Built on [AWS Strands Agents](https://github.com/strands-agents/strands-agents) with LiteLLM provider routing.
+- The agent orchestrates **4 specialized meteorological tools**:
+  | Tool Name | Scope & Function | Data Provider |
+  |-----------|------------------|---------------|
+  | `get_current_weather` | Real-time temperature, humidity, wind velocity, barometric pressure | OpenWeatherMap v2.5 |
+  | `get_forecast` | 5-day daily forecast summaries, min/max temps, 3-hour precipitation probability | OpenWeatherMap v2.5 |
+  | `get_alerts` | Active government hazard bulletins (thunderstorms, floods, cyclones) | US NWS & GDACS Global |
+  | `activity_advisor` | Outdoor pursuit suitability scoring (running, cycling, hiking, water sports) | Custom Heuristic Engine |
+- **Context-Aware Geolocation:** Automatically infers the active city if the user asks contextual questions like *"Will it rain tomorrow?"* without specifying the location.
 
-| Mode | Entrypoint / Infrastructure | LLM Engine | Audio & Alerts |
-|------|-----------------------------|------------|----------------|
-| **Local Development** | `run_local.py` (HTTP on `http://127.0.0.1:3001`) | Groq API / local Ollama via LiteLLM | Local browser audio / console output |
-| **AWS Serverless Production** | `template.yaml` (SAM Tri-Lambda Architecture) | LiteLLM routing to Groq or self-hosted Ollama on EC2 | Amazon Polly (`tts-handler`) + EventBridge/SNS (`alert-handler`) |
+### 🔊 Neural Speech Synthesis & Audio Visualizer
+- Agent responses are converted to speech via **Amazon Polly** neural speaker voices.
+- Dynamic language-to-voice mapping matching the exact dialect of the user.
+- Base64 audio stream transport eliminating persistent file storage overhead.
+- Interactive audio playback player with scrubber and animated waveform frequencies.
 
-#### Tri-Lambda Architecture Overview
-1. **`agent-handler` (Core Brain)**: Receives `/query`, retrieves weather context, drives Strands Agent tool executions, and coordinates with `tts-handler`. Exposed via both API Gateway and a direct Lambda Function URL (which avoids API Gateway's 29-second hard timeout for long LLM inference chains).
-2. **`tts-handler` (Voice Synthesis)**: Dedicated Lambda invoked synchronously via boto3 from `agent-handler` to synthesize audio using Amazon Polly neural voices with automatic language detection matching.
-3. **`alert-handler` (Proactive Notifications)**: Triggered daily by an Amazon EventBridge schedule rule (`cron(30 1 * * ? *)` = 7:00 AM IST) to evaluate current alerts for the configured alert location and broadcast warning bulletins through AWS SNS to subscribed emails.
+### 📊 Modern Glassmorphism Dashboard
+- Glassmorphic translucent cards with layered ambient lighting effects.
+- 24-hour horizontal hourly forecast strip with condition icons.
+- 5-day daily forecast sidebar with tabular numeral alignment.
+- Dismissable severe weather warning pill banner.
+- Responsive design tailored for mobile touch targets ($\ge 44\text{px}$) and desktop viewports.
 
 ---
 
-## 🛠️ Tech Stack
+## 🏗️ System Architecture
 
-### Frontend
-| Technology | Purpose |
-|------------|---------|
-| **Next.js 14** | React framework with file-based routing |
-| **Tailwind CSS 3** | Utility-first styling with custom design tokens |
-| **Lucide React** | Consistent, stroke-matched icon library |
-| **Open-Meteo API** | Client-side instant weather data (no key required) |
+Weather Buddy utilizes a decoupled microservices architecture partitioned across client, inference, and serverless execution boundaries:
 
-### Backend
-| Technology | Purpose |
-|------------|---------|
-| **Python 3.12** | Backend runtime |
-| **AWS Strands Agents** | Agentic AI framework with tool-use loop |
-| **Groq API** | LLM inference (Llama 3.3 70B Versatile) and speech-to-text (Whisper Large v3) |
-| **OpenWeatherMap API** | Server-side weather data with multilingual support |
-| **Amazon Polly** | Text-to-speech synthesis (production) |
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             CLIENT LAYER (BROWSER)                          │
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                      Next.js 14 React Application                   │   │
+│   │                                                                     │   │
+│   │   [TopBar / Search]    [WeatherCard]    [ForecastList]   [Timeline] │   │
+│   │   [AlertBanner]        [ChatHistory]    [AudioPlayer]    [Badges]   │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│             │                                           │                   │
+│      MediaRecorder API                           JSON REST Payload          │
+│      (Audio Blob: webm)                         { text, lang, ctx }         │
+│             │                                           │                   │
+└─────────────┼───────────────────────────────────────────┼───────────────────┘
+              │                                           │
+       POST /transcribe                            POST /query
+              │                                           │
+              ▼                                           ▼
+┌───────────────────────────┐           ┌─────────────────────────────────────┐
+│    SPEECH TRANSLATION     │           │         CONVERSATIONAL AGENT        │
+│                           │           │                                     │
+│    Groq Cloud Whisper     │           │   Agent Lambda (Python 3.12)        │
+│    whisper-large-v3       │           │   • AWS Strands Agent Loop          │
+│    • Automatic Lang Detect│           │   • LiteLLM Provider Routing        │
+│    • Low-latency transcript│          │   • In-Memory Context Injector      │
+└───────────────────────────┘           └──────────────────┬──────────────────┘
+                                                           │
+                                ┌──────────────────────────┴───────────────┐
+                                │                                          │
+                                ▼                                          ▼
+                ┌───────────────────────────────┐          ┌───────────────────────────────┐
+                │          TOOL ORCHESTRATION   │          │      VOICE SYNTHESIS          │
+                │                               │          │                               │
+                │  1. OpenWeatherMap v2.5 API   │          │  TTS Lambda (Python 3.12)     │
+                │     (Current weather + FC)    │          │  • Amazon Polly Client        │
+                │  2. US NWS Alerts API         │          │  • Language-to-Voice Mapper   │
+                │     (National Weather alerts) │          │  • Base64 MP3 Audio Stream    │
+                │  3. GDACS Global Disaster Feed│          │  • Boto3 Synchronous Invoke   │
+                │  4. Activity Advisor Tool     │          └───────────────────────────────┘
+                └───────────────────────────────┘
+                                │
+                                ▼
+                ┌───────────────────────────────┐
+                │     PROACTIVE MONITORING      │
+                │                               │
+                │  EventBridge Daily Schedule   │
+                │  • cron(30 1 * * ? *)         │
+                │  Alert Lambda                 │
+                │  • OWM Alert Evaluator        │
+                │  AWS SNS Topic                │
+                │  • Email Warning Broadcast    │
+                └───────────────────────────────┘
+```
 
-### Infrastructure
-| Technology | Purpose |
-|------------|---------|
-| **AWS SAM** | Infrastructure-as-Code for serverless deployment |
-| **AWS Lambda** | Serverless compute for agent and TTS |
-| **AWS API Gateway** | HTTPS routing for `/query` and `/transcribe` |
+### Tri-Lambda Execution Topology
+1. **`agent-handler` (Core Brain):** Orchestrates `/query`, injects context, drives the Strands tool loop, and coordinates with TTS. Exposed via **Lambda Function URLs** to bypass API Gateway's 29-second hard execution limit.
+2. **`tts-handler` (Voice Synthesis):** Dedicated Lambda invoked synchronously via `boto3` to synthesize speech using Amazon Polly neural voices.
+3. **`alert-handler` (Proactive Notifications):** Triggered daily by an Amazon EventBridge cron rule (`cron(30 1 * * ? *)` = 7:00 AM IST) to scan for hazardous conditions and broadcast email bulletins via AWS SNS.
 
 ---
 
-## 🚀 Getting Started
+## 📚 Documentation Hub
 
-### Prerequisites
+We maintain an exhaustive engineering documentation suite in the [`docs/`](file:///docs/) directory:
 
-- **Python 3.12+** with `pip`
-- **Node.js 18+** with `npm`
-- A free **[OpenWeatherMap API key](https://openweathermap.org/api)** (v2.5 free tier)
-- A free **[Groq API key](https://console.groq.com/)** (for Llama 3.3 + Whisper)
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/FLASH2332/wx-agent.git
-cd wx-agent
-```
-
-### 2. Configure Environment Variables
-
-Create a `.env` file in the project root (refer to [`.env.example`](file:///.env.example)):
-
-```env
-# OpenWeatherMap API key (free tier — v2.5 current + forecast endpoints)
-OWM_API_KEY=your_openweathermap_key
-
-# LLM provider configuration via LiteLLM (select provider using prefix)
-# Option A: Groq hosted inference (fastest)
-LLM_MODEL_ID=groq/llama-3.1-8b-instant
-LLM_BASE_URL=
-LLM_API_KEY=your_groq_api_key
-
-# Option B: Self-hosted Ollama on EC2 (OpenAI-compatible)
-# LLM_MODEL_ID=openai/qwen2.5:3b-instruct
-# LLM_BASE_URL=http://<ec2-ip>:11434/v1
-# LLM_API_KEY=ollama
-
-# AWS Region (defaults to us-east-1)
-AWS_REGION=us-east-1
-```
-
-Create `frontend/.env.local`:
-
-```env
-# Local development:
-NEXT_PUBLIC_API_URL=http://127.0.0.1:3001/query
-
-# Production (Lambda Function URL output from SAM deploy):
-# NEXT_PUBLIC_API_URL=https://<function-id>.lambda-url.us-east-1.on.aws
-```
-
-### 3. Install Backend Dependencies
-
-```bash
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# macOS/Linux
-source venv/bin/activate
-
-pip install strands-agents strands-agents-tools python-dotenv
-```
-
-### 4. Install Frontend Dependencies
-
-```bash
-cd frontend
-npm install
-cd ..
-```
-
-### 5. Start the Backend
-
-```bash
-python run_local.py
-```
-
-You should see:
-```
-Starting direct Groq Python server on http://127.0.0.1:3001...
-```
-
-### 6. Start the Frontend
-
-In a separate terminal:
-
-```bash
-cd frontend
-npm run dev
-```
-
-Open **http://localhost:3000** in your browser.
-
-### 7. Try It Out!
-
-- 🎤 Click the microphone and say: *"What's the weather in Paris?"*
-- ⌨️ Or type: *"Can I go hiking in Tokyo tomorrow?"*
-- 🌍 Try speaking in another language — say *"Quel temps fait-il à Lyon?"* in French!
+| Document | Primary Focus | Key Topics |
+|----------|---------------|------------|
+| 📖 **[Documentation Portal](file:///docs/index.md)** | Master Sitemap | Quick start paths, reading guide, and directory index |
+| 🏗️ **[System Architecture](file:///docs/architecture/system-design.md)** | Engineering Design | Microservice topology, reactive state machine, and SLA targets |
+| 🔄 **[Sequence Flows](file:///docs/architecture/sequence-diagrams.md)** | Interaction Diagrams | Audio lifecycle, tool reasoning turns, and retry backoffs |
+| ⚛️ **[Component Lifecycle](file:///docs/architecture/component-lifecycle.md)** | Frontend Engineering | Next.js hydration, Web Audio API context, and typewriter engine |
+| 📡 **[REST API Reference](file:///docs/api-reference/rest-api.md)** | Integration Contracts | Endpoints, JSON schemas, TypeScript & Python SDKs, RFC 7807 |
+| 📋 **[Data Models & Schemas](file:///docs/api-reference/data-models.md)** | Entity Dictionary | Schemas for observations, forecasts, alerts, and advisor |
+| ⚡ **[Streaming & WebSockets](file:///docs/api-reference/websocket-and-streaming.md)** | Real-Time Protocol | Server-Sent Events (SSE) and token-by-token streaming |
+| ☁️ **[AWS SAM Operations Guide](file:///docs/deployment/aws-sam-guide.md)** | Cloud Operations | Guided deployment, CloudFormation parameters, failover runbooks |
+| 🚀 **[GitHub Actions CI/CD](file:///docs/deployment/cicd-github-actions.md)** | Automation Pipeline | Keyless AWS OIDC authentication, testing, and continuous deploy |
+| 🦙 **[Self-Hosting Ollama on EC2](file:///docs/guides/local-ollama-ec2-setup.md)** | Private LLM Hosting | Provisioning script, systemd daemon, instance sizing, LiteLLM |
+| 🏃 **[Activity Advisor Math](file:///docs/guides/activity-advisor-algorithms.md)** | Meteorological Models | Heat Index, Wind Chill, and sport suitability scoring equations |
+| 🧪 **[Testing Handbook](file:///docs/guides/testing-handbook.md)** | Quality Assurance | Offline test methodology, Boto3/Polly mocks, and test execution |
+| 📊 **[Performance Benchmarks](file:///docs/guides/performance-benchmarks.md)** | Latency & Sizing | Latency profiles, cold-start analysis, and Lambda memory tuning |
+| 🩺 **[Troubleshooting & FAQ](file:///docs/guides/troubleshooting-and-faq.md)** | Diagnostic Manual | 20+ error recovery recipes, CloudWatch queries, and common FAQs |
+| 🌍 **[Multilingual Matrix](file:///docs/i18n/multilingual-matrix.md)** | Internationalization | 100-language routing table, Polly voices, and SSML rules |
+| 🔒 **[Threat Model & Security](file:///docs/security/threat-model-and-hardening.md)** | Security Hardening | STRIDE model, OWASP Top 10 for LLMs, and prompt sandboxing |
+| 🏛️ **[ADR-0001: Tri-Lambda](file:///docs/adr/0001-tri-lambda-architecture.md)** | Architecture Decision | Decoupling monolithic Lambda into specialized microservices |
+| 🏛️ **[ADR-0002: Function URLs](file:///docs/adr/0002-lambda-function-urls-vs-api-gateway.md)** | Architecture Decision | Adopting Lambda Function URLs to bypass 29s timeout cap |
+| 🏛️ **[ADR-0003: LiteLLM Router](file:///docs/adr/0003-litellm-multi-provider-abstraction.md)** | Architecture Decision | Multi-provider portability across Groq and self-hosted Ollama |
 
 ---
 
@@ -270,10 +186,21 @@ Open **http://localhost:3000** in your browser.
 
 ```
 wx-agent/
-├── Makefile                        # Build, validate, deploy, and test shortcuts
-├── run_local.py                    # Local dev server (Groq/Ollama-powered)
-├── template.yaml                   # AWS SAM multi-lambda infrastructure definition
+├── Makefile                        # Master shortcuts for build, validate, deploy & test
+├── run_local.py                    # Standalone local dev server (Groq/Ollama-powered)
+├── template.yaml                   # AWS SAM multi-lambda CloudFormation definition
 ├── .env.example                    # Environment variable reference
+├── CONTRIBUTING.md                 # Contributor guide, code standards & ADR process
+│
+├── docs/                           # Comprehensive technical documentation suite
+│   ├── index.md                    # Master documentation portal
+│   ├── architecture/               # Architecture, sequence flows & component lifecycle
+│   ├── api-reference/              # REST specs, data models & streaming protocols
+│   ├── deployment/                 # AWS SAM operations manual & GitHub Actions CI/CD
+│   ├── guides/                     # Ollama EC2 setup, testing handbook & benchmarks
+│   ├── i18n/                       # 100-language routing matrix & translation dictionaries
+│   ├── security/                   # STRIDE threat model & OWASP Top 10 for LLMs
+│   └── adr/                        # Architecture Decision Records
 │
 ├── lambdas/
 │   ├── agent-handler/              # Main conversational agent Lambda (POST /query)
@@ -286,7 +213,7 @@ wx-agent/
 │   │
 │   ├── tts-handler/                # Text-to-speech Lambda (internal invocation)
 │   │   ├── handler.py              # Amazon Polly speech synthesis into base64 audio
-│   │   ├── conftest.py             # Pytest fixtures and test environment
+│   │   ├── conftest.py             # Pytest fixtures and mock environments
 │   │   └── tests/                  # Offline unit tests
 │   │
 │   └── alert-handler/              # Scheduled proactive weather monitoring
@@ -322,49 +249,84 @@ wx-agent/
 
 ---
 
-## 🔄 How It Works
+## 🚀 Getting Started
 
-### Voice Flow
+### Prerequisites
+- **Python 3.12+** with `pip`
+- **Node.js 18+** with `npm`
+- Free developer API credentials:
+  - [OpenWeatherMap API Key](https://openweathermap.org/api) (v2.5 endpoints)
+  - [Groq API Key](https://console.groq.com/) (for Llama 3 & Whisper inference)
 
+### 1. Clone the Repository
+```bash
+git clone https://github.com/FLASH2332/wx-agent.git
+cd wx-agent
 ```
-User speaks → MediaRecorder captures audio
-    → POST /transcribe (Groq Whisper)
-    → Returns { text, language }
-    → Frontend updates language dropdown
-    → POST /query with { text, lang, contextLocation }
-    → Strands Agent calls weather tools (with lang param)
-    → Agent responds in detected language
-    → Response displayed + spoken via TTS
+
+### 2. Configure Environment Variables
+Copy the template into a root `.env` file (refer to [`.env.example`](file:///.env.example)):
+```bash
+cp .env.example .env
 ```
 
-### Language Propagation
+Populate the configuration:
+```env
+# OpenWeatherMap API key (free tier - v2.5 endpoints)
+OWM_API_KEY=your_openweathermap_key
 
-The detected language flows through every layer:
+# LiteLLM Configuration (select provider via model-id prefix)
+# Hosted Groq:
+LLM_MODEL_ID=groq/llama-3.1-8b-instant
+LLM_BASE_URL=
+LLM_API_KEY=your_groq_api_key
 
-| Layer | How Language Is Used |
-|-------|---------------------|
-| **Whisper** | Detects language from audio, returns ISO-639-1 code |
-| **Frontend** | Updates `selectedLang` state → propagates to all components |
-| **i18n.js** | Translates static UI labels (Humidity, Wind, etc.) |
-| **Agent Prompt** | `IMPORTANT INSTRUCTION: You must ALWAYS respond in '{lang}'` |
-| **OWM API** | `&lang=fr` returns localized weather descriptions |
-| **Forecast dates** | `toLocaleDateString(lang)` renders localized day names |
+# AWS Region (defaults to us-east-1)
+AWS_REGION=us-east-1
+```
 
-### Context Awareness
+Configure `frontend/.env.local`:
+```env
+NEXT_PUBLIC_API_URL=http://127.0.0.1:3001/query
+```
 
-When you view the dashboard for "Seattle", the agent automatically knows:
+### 3. Install Backend Runtime
+```bash
+python -m venv .venv
+source .venv/bin/activate  # macOS / Linux
+# or: .venv\Scripts\activate on Windows
 
-> *"Context: The user is currently viewing the dashboard for Seattle, US. If they ask a question without specifying a location, assume they mean Seattle, US."*
+pip install strands-agents strands-agents-tools python-dotenv litellm requests
+```
 
-This is injected into the system prompt dynamically, so you can ask *"Will it rain tomorrow?"* without repeating the city name.
+### 4. Install Frontend Dependencies
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+### 5. Launch the Local Development Server
+```bash
+python run_local.py
+```
+The server will start listening on `http://127.0.0.1:3001`.
+
+### 6. Start the Frontend Dashboard
+In a separate terminal:
+```bash
+cd frontend
+npm run dev
+```
+Open **http://localhost:3000** in your browser.
 
 ---
 
-## ☁️ Deployment
+## ☁️ Deployment Guide
 
-### AWS SAM Multi-Lambda Architecture
+### AWS SAM Multi-Lambda Production Stack
 
-The repository includes a top-level `Makefile` providing standardized shortcuts for building, linting, and deploying the AWS SAM stack:
+Use the top-level `Makefile` for standardized SAM operations:
 
 ```bash
 # 1. Validate template syntax and lint
@@ -380,76 +342,73 @@ make deploy-guided   # runs: sam deploy --guided
 make deploy          # runs: sam deploy
 ```
 
-#### Key Deployment Parameters
-During `sam deploy --guided`, configure the following stack parameters:
+#### Deployment Parameter Reference
+During `sam deploy --guided`, configure stack parameters:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `OwmApiKey` | *(required)* | OpenWeatherMap v2.5 API key |
-| `LlmModelId` | `groq/llama-3.1-8b-instant` | LiteLLM model identifier (e.g., `openai/qwen2.5:7b-instruct` or `groq/llama-3.1-8b-instant`) |
-| `LlmApiKey` | *(required)* | API key for LLM provider (`ollama` for self-hosted instances) |
-| `LlmBaseUrl` | `""` | Base URL for self-hosted OpenAI-compatible LLMs (e.g., `http://<ec2-ip>:11434/v1`) |
-| `AlertLocation` | `Chennai, IN` | Geographic location monitored by the daily morning alert schedule |
-| `AlertEmail` | `""` | Email address to receive proactive SNS weather warning alerts |
+| `LlmModelId` | `groq/llama-3.1-8b-instant` | LiteLLM model identifier |
+| `LlmApiKey` | *(required)* | Inference provider API key |
+| `LlmBaseUrl` | `""` | Base URL for self-hosted LLMs (e.g. EC2 Ollama) |
+| `AlertLocation` | `Chennai, IN` | City monitored by morning alert schedule |
+| `AlertEmail` | `""` | Recipient email for SNS weather alerts |
 
-#### Connecting the Frontend: Lambda Function URL vs. API Gateway
-SAM provisions two endpoints for the agent backend:
-- **`AgentFunctionUrl` (Recommended)**: Direct Lambda Function URL with **no 29-second timeout limit**, ensuring slow self-hosted model generation or multi-step tool calls complete reliably without connection drops.
-- **`ApiUrl`**: Standard API Gateway REST endpoint (enforces an AWS hard limit of 29 seconds).
+#### Connecting Frontend: Function URLs vs API Gateway
+SAM outputs two entry points:
+- **`AgentFunctionUrl` (Recommended):** Direct Lambda Function URL with **no 29-second timeout ceiling**, preventing connection drops during complex reasoning.
+- **`ApiUrl`:** Traditional API Gateway endpoint (enforces AWS 29-second hard cap).
 
-Copy the output `AgentFunctionUrl` and configure your frontend:
-
+Set `NEXT_PUBLIC_API_URL` in your frontend deployment:
 ```env
 NEXT_PUBLIC_API_URL=https://<id>.lambda-url.us-east-1.on.aws
 ```
-
-### Frontend Deployment (Vercel)
-
-```bash
-cd frontend
-npx vercel
-```
-
-In the Vercel project dashboard, set `NEXT_PUBLIC_API_URL` to your deployed Lambda Function URL.
 
 ---
 
 ## 🧪 Testing & Validation
 
-Run unit tests offline across both Lambda services:
+Weather Buddy enforces offline testability with mocked cloud dependencies:
 
 ```bash
-# Run pytest test suites across agent-handler and tts-handler
+# Run unit tests across all Lambda microservices
 make test
+
+# Or run pytest individually per lambda
+cd lambdas/agent-handler && pytest -v
+cd lambdas/tts-handler && pytest -v
+cd lambdas/alert-handler && pytest -v
 ```
 
-Or execute directly inside each lambda directory:
-```bash
-cd lambdas/agent-handler && pytest -q
-cd lambdas/tts-handler && pytest -q
-```
+See the **[Testing Handbook](file:///docs/guides/testing-handbook.md)** for fixture patterns and mocking strategies.
 
 ---
 
-## 🔒 Security
+## 🔒 Security & Guardrails
 
-- **Scoped agent:** The system prompt strictly limits the agent to weather-only conversations. Prompt injection attempts are treated as out-of-scope requests and declined.
-- **No secrets in code:** All API keys are loaded from environment variables. `.env` and `.env.local` are gitignored.
-- **CORS configured:** Both local and production backends set appropriate CORS headers.
-- **Custom User-Agent:** All outbound HTTP requests use `WeatherBuddy/1.0` to avoid bot-blocking by external APIs.
+- **Strict Prompt Sandboxing:** The conversational agent is strictly scoped to weather and outdoor activity topics. Prompt injection attempts are politely declined in the user's native language.
+- **Zero Secrets in Source:** All keys are injected via environment variables. `.env` and `.env.local` are gitignored.
+- **Ephemeral Audio Processing:** Voice recordings and synthesized speech are handled in volatile container memory as Base64 strings. No audio files are persisted to disk or cloud storage.
+- **Least Privilege IAM:** Execution roles restrict functions strictly to their required targets (`TtsFunction`, `AlertTopic`).
+
+See the **[Threat Model & Security Specification](file:///docs/security/threat-model-and-hardening.md)** for STRIDE analysis and OWASP Top 10 defenses.
+
+---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please check out [`CONTRIBUTING.md`](file:///CONTRIBUTING.md) for step-by-step instructions on setting up your local environment, running offline test suites (`make test`), and guidelines for submitting pull requests.
+Contributions are warmly welcomed! Please review our **[Contributor Guide (CONTRIBUTING.md)](file:///CONTRIBUTING.md)** for:
+- Development workflows and local setup.
+- Coding style standards (PEP 8 for Python, ESLint for JavaScript).
+- Conventional Commit message formats.
+- Architecture Decision Record (ADR) review procedures.
 
 ---
 
 ## 📜 License
 
-This project was built for the **FirstCommit Hackathon**. Please check with the repository owner for licensing details.
-
----
+This project was built for the **FirstCommit Hackathon**. Please check with the repository owners for licensing and usage terms.
 
 <p align="center">
-  Built with ❤️ using AWS Strands Agents, Groq, and Next.js
+  Built with ❤️ using AWS Strands Agents, Groq, Amazon Polly, and Next.js
 </p>
