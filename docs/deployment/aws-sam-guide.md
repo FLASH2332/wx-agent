@@ -1,181 +1,169 @@
-# Weather Buddy — AWS SAM Production Deployment Guide
+# Weather Buddy — Production AWS SAM Operations & Deployment Manual
 
-This operations guide provides end-to-end instructions for deploying, configuring, monitoring, and maintaining Weather Buddy's multi-lambda serverless infrastructure on Amazon Web Services (AWS) using **AWS SAM (Serverless Application Model)**.
+This operations manual details the end-to-end lifecycle for deploying, securing, monitoring, and maintaining Weather Buddy on Amazon Web Services using **AWS SAM (Serverless Application Model)**.
 
 ---
 
-## 1. Prerequisites & Environment Preparation
+## 1. Architectural Topology & Deployment Tenets
 
-Before deploying the serverless stack, ensure your local development workstation or CI/CD runner satisfies the following prerequisites:
+Weather Buddy's cloud infrastructure is codifying in [`template.yaml`](file:///Users/mithresh/wx-agent/template.yaml) following strict serverless tenets:
 
-### 1.1 Tooling & Versions
-| Tool | Minimum Version | Verification Command | Purpose |
-|------|-----------------|----------------------|---------|
-| **AWS CLI** | `v2.15.0+` | `aws --version` | AWS API credentials and account interaction |
-| **AWS SAM CLI** | `v1.110.0+` | `sam --version` | Serverless build, lint, and packaging engine |
-| **Python** | `3.12.x` | `python --version` | Lambda execution runtime |
-| **uv** | `v0.4.0+` | `uv --version` | Ultra-fast dependency resolution and virtual environments |
-| **Node.js** | `v18.x+` | `node --version` | Frontend dashboard runtime & Vercel CLI |
+1. **Least Privilege Microservices:** Compute workloads are partitioned into dedicated single-responsibility Lambdas:
+   - `AgentFunction`: Reasoning, tool loops, and orchestration.
+   - `TtsFunction`: Internal speech synthesis.
+   - `AlertFunction`: Scheduled event-driven weather alerts.
+2. **Timeout Decoupling via Function URLs:** Public endpoints use direct AWS Lambda Function URLs with CORS enabled, bypassing API Gateway's 29-second hard execution ceiling.
+3. **Event-Driven Push Notifications:** Automated morning alert evaluations driven by Amazon EventBridge rules and AWS SNS topic distribution.
+4. **Zero-File Persistence:** Audio streams are synthesized in-memory as Base64-encoded buffers, eliminating S3 storage overhead and lifecycle cleanup policies.
 
-### 1.2 AWS Account Configuration & Authentication
-Ensure you have active AWS credentials configured in your environment or `~/.aws/credentials`:
-
-```bash
-# Verify caller identity and account permissions
-aws sts get-caller-identity
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            AWS REGION: us-east-1                            │
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                      Public Ingress Boundary                        │   │
+│   │                                                                     │   │
+│   │   [Lambda Function URL: AgentFunctionUrl] (AuthType: NONE, CORS: *) │   │
+│   │   • Uncapped 300s Execution Ceiling                                 │   │
+│   │   • Directly routes POST /query and POST /transcribe                │   │
+│   └──────────────────────────────────┬──────────────────────────────────┘   │
+│                                      │                                      │
+│                                      ▼                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │               AgentFunction (AWS Lambda, Python 3.12)               │   │
+│   │               Memory: 512MB | Timeout: 300s                         │   │
+│   │               • Strands Agent Autonomous Tool Loop                  │   │
+│   │               • LiteLLM Router (Groq API / EC2 Ollama)              │   │
+│   └───────────────┬─────────────────────────────────────┬───────────────┘   │
+│                   │                                     │                   │
+│         Synchronous boto3 Invoke              Outbound HTTPS (443)          │
+│                   │                                     │                   │
+│                   ▼                                     ▼                   │
+│   ┌───────────────────────────────┐     ┌───────────────────────────────┐   │
+│   │  TtsFunction (AWS Lambda)     │     │      External Data Feeds      │   │
+│   │  Memory: 256MB | Timeout: 30s │     │      • OpenWeatherMap v2.5    │   │
+│   │  • Amazon Polly Integration   │     │      • US NWS Weather API     │   │
+│   │  • Base64 Audio Serialization │     │      • GDACS Emergency Alerts │   │
+│   └───────────────────────────────┘     └───────────────────────────────┘   │
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                      Scheduled Ingress Boundary                     │   │
+│   │                                                                     │   │
+│   │   [Amazon EventBridge Rule] cron(30 1 * * ? *) (01:30 UTC / 7:00 IST│   │
+│   └──────────────────────────────────┬──────────────────────────────────┘   │
+│                                      │                                      │
+│                                      ▼                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │               AlertFunction (AWS Lambda, Python 3.12)               │   │
+│   │               Memory: 256MB | Timeout: 30s                          │   │
+│   │               • Scans OWM for Severe Weather Warnings               │   │
+│   │               • Evaluates Alert Significance Criteria               │   │
+│   └──────────────────────────────────┬──────────────────────────────────┘   │
+│                                      │                                      │
+│                            Publish to SNS Topic                             │
+│                                      │                                      │
+│                                      ▼                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │            Amazon SNS Topic (weather-buddy-alerts)                  │   │
+│   │            • Instant Email Notifications to Confirmed Subscribers   │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Output should confirm your active Account ID, User ARN, and configured default region (e.g., `us-east-1`).
+---
+
+## 2. Infrastructure Parameter Reference
+
+When deploying via `sam deploy --guided` or automating through CI/CD, the CloudFormation stack accepts the following parameters:
+
+| Parameter Key | Data Type | Default Value | Mandatory? | Architectural Description |
+|---------------|:---------:|:-------------:|:----------:|---------------------------|
+| `OwmApiKey` | String | *(None)* | **Yes** | OpenWeatherMap v2.5 API Key for meteorological data queries. Marked `NoEcho: true`. |
+| `LlmModelId` | String | `groq/llama-3.1-8b-instant` | No | Model string formatted with LiteLLM provider prefix (`groq/` or `openai/`). |
+| `LlmApiKey` | String | *(None)* | **Yes** | Authentication secret for the LLM inference provider (`ollama` for self-hosted instances). Marked `NoEcho: true`. |
+| `LlmBaseUrl` | String | `""` | No | OpenAI-compatible endpoint URL for self-hosted models (e.g., `http://<ec2-ip>:11434/v1`). |
+| `AlertLocation` | String | `Chennai, IN` | No | Geographic target city scanned daily for extreme weather warnings. |
+| `AlertEmail` | String | `""` | No | Recipient email address subscribed to the SNS warning topic. |
 
 ---
 
-## 2. Infrastructure Architecture & SAM Template Breakdown
+## 3. Deployment Procedures
 
-Weather Buddy's infrastructure is codified in [`template.yaml`](file:///Users/mithresh/wx-agent/template.yaml). It orchestrates three Lambda functions, one SNS topic, an EventBridge scheduler rule, and dual endpoint exposures.
-
-### 2.1 Resource Mapping
-
-| Logical Resource ID | AWS Resource Type | Description |
-|---------------------|-------------------|-------------|
-| `AgentFunction` | `AWS::Serverless::Function` | Python 3.12 Lambda running Strands Agent behind `/query` |
-| `AgentFunctionUrl` | `AWS::Lambda::Url` | Direct HTTPS URL with no 29s timeout cap |
-| `TtsFunction` | `AWS::Serverless::Function` | Speech synthesis Lambda invoking Amazon Polly |
-| `AlertFunction` | `AWS::Serverless::Function` | Daily scheduled Lambda checking weather warnings |
-| `AlertTopic` | `AWS::SNS::Topic` | Simple Notification Service topic broadcasting email alerts |
-| `AlertFunctionDailySchedule` | `AWS::Events::Rule` | EventBridge cron rule (`cron(30 1 * * ? *)`) |
-
-### 2.2 IAM Permissions & Role Definitions
-In AWS Academy or enterprise environments, functions attach to a pre-provisioned role:
-```yaml
-Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
-```
-
-If deploying in a standard personal AWS account without a pre-existing `LabRole`, create an IAM role with the following policies attached:
-1. `AWSLambdaBasicExecutionRole` (writes logs to Amazon CloudWatch).
-2. `AmazonPollyReadOnlyAccess` (allows `TtsFunction` to synthesize speech).
-3. `AmazonSNSFullAccess` (allows `AlertFunction` to publish alert topics).
-4. `AWSLambdaRole` (allows `AgentFunction` to invoke `TtsFunction` via `lambda:InvokeFunction`).
-
----
-
-## 3. Step-by-Step Deployment Walkthrough
-
-### Step 1: Validate SAM Template
-Run template linting against CloudFormation schema rules:
+### 3.1 Validation & Linting
+Verify CloudFormation compliance before building:
 ```bash
 make validate
-# or: sam validate --lint
+# Runs: sam validate --lint
 ```
 
-### Step 2: Build Lambdas with the Makefile Method
-Weather Buddy uses custom `Makefile` targets inside each lambda subdirectory to resolve dependencies with `uv`:
+### 3.2 Building with Makefile Method
+Each Lambda directory contains a `Makefile` triggering `uv` dependency installation:
 ```bash
 make build
-# or: sam build
+# Runs: sam build
 ```
-This generates build artifacts in the local `.aws-sam/build/` workspace directory.
 
-### Step 3: Interactive Guided Deployment
-For the initial deployment, execute:
+### 3.3 Guided First-Time Deployment
 ```bash
 make deploy-guided
-# or: sam deploy --guided
+# Runs: sam deploy --guided
 ```
 
-You will be prompted for parameter values:
-```text
-Configuring SAM deploy
-======================
-
-    Stack Name [wx-agent]: weather-buddy-prod
-    AWS Region [us-east-1]: us-east-1
-    Parameter OwmApiKey []: <YOUR_OPENWEATHERMAP_API_KEY>
-    Parameter AlertLocation [Chennai, IN]: Seattle, US
-    Parameter AlertEmail []: your-alerts@example.com
-    Parameter LlmModelId [groq/llama-3.1-8b-instant]: groq/llama-3.1-8b-instant
-    Parameter LlmBaseUrl []: 
-    Parameter LlmApiKey []: <YOUR_GROQ_API_KEY>
-    Confirm changes before deploy [y/N]: y
-    Allow SAM CLI IAM role creation [Y/n]: Y
-    Disable rollback [y/N]: N
-    AgentFunction may not have authorization defined, Is this okay? [y/N]: y
-    Save arguments to configuration file [Y/n]: Y
-    SAM configuration file [samconfig.toml]: samconfig.toml
-    SAM configuration environment [default]: default
-```
-
-### Step 4: Extract Stack Outputs
-Upon deployment completion, CloudFormation outputs the generated endpoints:
-```text
-CloudFormation outputs from deployed stack
--------------------------------------------------------------------------------------------------
-Outputs
--------------------------------------------------------------------------------------------------
-Key                 AgentFunctionUrl
-Description         Lambda Function URL for POST /query and POST /transcribe (no 29s cap)
-Value               https://k7abc89xyz.lambda-url.us-east-1.on.aws/
-
-Key                 ApiUrl
-Description         API Gateway invoke URL for POST /query (29s hard cap)
-Value               https://abc123def456.execute-api.us-east-1.amazonaws.com/Prod/query
--------------------------------------------------------------------------------------------------
-```
-
----
-
-## 4. Configuring the Frontend & Custom Domains
-
-### 4.1 Connecting Next.js Frontend
-Copy the `AgentFunctionUrl` value and store it in `frontend/.env.local`:
-```env
-NEXT_PUBLIC_API_URL=https://k7abc89xyz.lambda-url.us-east-1.on.aws
-```
-
-### 4.2 Deploying Frontend to Vercel
+### 3.4 Headless Deployment via CI/CD
 ```bash
-cd frontend
-npx vercel
+sam deploy --no-confirm-changeset --no-fail-on-empty-changeset \
+  --stack-name weather-buddy-prod \
+  --parameter-overrides \
+    OwmApiKey="$OWM_API_KEY" \
+    LlmModelId="groq/llama-3.1-8b-instant" \
+    LlmApiKey="$GROQ_API_KEY" \
+    AlertLocation="Seattle, US" \
+    AlertEmail="alerts@example.com"
 ```
-1. Follow interactive CLI prompts to link to your Vercel organization.
-2. In the Vercel Project Dashboard, navigate to **Settings > Environment Variables**.
-3. Add `NEXT_PUBLIC_API_URL` set to your `AgentFunctionUrl`.
-4. Trigger a production redeploy: `npx vercel --prod`.
 
 ---
 
-## 5. Monitoring, Observability & CloudWatch Logging
+## 4. Disaster Recovery & Rollback Runbooks
 
-### 5.1 Real-Time Log Tailing
-Tail live log output from all three Lambdas during testing:
+### 4.1 CloudFormation Rollback Recovery
+If a deployment fails during parameter validation or resource provisioning:
+1. Identify the failing resource in CloudFormation events:
+   ```bash
+   aws cloudformation describe-stack-events --stack-name weather-buddy-prod \
+     --query 'StackEvents[?ResourceStatus==`CREATE_FAILED`].[LogicalResourceId,ResourceStatusReason]' \
+     --output table
+   ```
+2. If the stack is locked in `ROLLBACK_COMPLETE`:
+   ```bash
+   sam delete --stack-name weather-buddy-prod --no-prompts
+   make deploy-guided
+   ```
 
-```bash
-# Stream logs from the conversational agent
-sam logs -n AgentFunction --stack-name weather-buddy-prod --tail
-
-# Stream logs from the TTS speech synthesis Lambda
-sam logs -n TtsFunction --stack-name weather-buddy-prod --tail
-
-# Stream logs from the daily alert cron Lambda
-sam logs -n AlertFunction --stack-name weather-buddy-prod --tail
-```
-
-### 5.2 Key CloudWatch Metrics to Monitor
-- **`Duration`**: Tracks agent execution latency (typically 1.2s - 4.5s depending on LLM tool turns).
-- **`Errors`**: Monitors uncaught exceptions or external API timeouts.
-- **`Throttles`**: Monitors concurrent execution limits (default standard AWS limit: 1000).
-- **`ColdStarts`**: Monitored via CloudWatch Insights queries on initialization events (`@type = "REPORT"`).
+### 4.2 Upstream Rate-Limit Failover Runbook
+If Groq Cloud experiences an outage:
+1. Update `LlmModelId` and `LlmBaseUrl` in `samconfig.toml` to point to a backup self-hosted EC2 instance or alternative LiteLLM provider.
+2. Trigger instant redeployment:
+   ```bash
+   make deploy
+   ```
+3. Verify endpoint health with smoke tests:
+   ```bash
+   curl -X POST https://<function-url>/query \
+     -H "Content-Type: application/json" \
+     -d '{"text": "Ping"}'
+   ```
 
 ---
 
-## 6. Cost Estimation & Free Tier Utilization
+## 5. Cost Optimization & Free Tier Budget Limits
 
-Weather Buddy is designed to operate completely within the AWS Free Tier for personal and demonstration workloads:
+Weather Buddy's architecture is engineered to run at **$0.00/month** on personal accounts:
 
-| Service | Monthly Usage Estimate | AWS Free Tier Allowance | Estimated Cost |
-|---------|------------------------|-------------------------|----------------|
-| **AWS Lambda** | 10,000 requests (~20,000s compute) | 1,000,000 requests + 3.2M seconds | **$0.00** |
-| **Amazon Polly** | 50,000 characters synthesized | 5,000,000 characters / month (12 months free) | **$0.00** |
-| **Amazon SNS** | 30 daily email notifications | 1,000 email notifications / month | **$0.00** |
-| **Amazon EventBridge** | 31 scheduled invocations | Standard rules free indefinitely | **$0.00** |
-| **Groq Cloud API** | ~500 requests / day | Free developer tier with rate limits | **$0.00** |
-| **OpenWeatherMap** | ~1,000 calls / day | Free tier: 60 calls/minute, 1M calls/month | **$0.00** |
+| Component | AWS Resource | Free Tier Quota | Typical Monthly Consumption | Billable Cost |
+|-----------|--------------|-----------------|-----------------------------|:-------------:|
+| Ingress | Lambda Function URL | Unlimited (Free) | 15,000 requests | $0.00 |
+| Reasoning | Agent Lambda (512MB) | 400,000 GB-seconds / mo | 3,800 GB-seconds | $0.00 |
+| Audio | TTS Lambda (256MB) | 400,000 GB-seconds / mo | 900 GB-seconds | $0.00 |
+| Speech Engine | Amazon Polly | 5M characters / mo (12 mos) | 120,000 characters | $0.00 |
+| Scheduling | Amazon EventBridge | Unlimited standard rules | 31 executions | $0.00 |
+| Notifications | Amazon SNS | 1,000 email dispatches / mo | 30 email dispatches | $0.00 |
