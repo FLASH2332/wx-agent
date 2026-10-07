@@ -247,42 +247,54 @@ Open **http://localhost:3000** in your browser.
 
 ```
 wx-agent/
-├── run_local.py                    # Local dev server (Groq-powered)
-├── template.yaml                   # AWS SAM infrastructure definition
+├── Makefile                        # Build, validate, deploy, and test shortcuts
+├── run_local.py                    # Local dev server (Groq/Ollama-powered)
+├── template.yaml                   # AWS SAM multi-lambda infrastructure definition
 ├── .env.example                    # Environment variable reference
 │
 ├── lambdas/
-│   └── agent-handler/
-│       ├── agent.py                # Strands Agent setup + model caching
-│       ├── handler.py              # AWS Lambda entry point (production)
-│       ├── prompts.py              # System prompt (scoped to weather only)
-│       ├── tools.py                # 4 weather tools (OWM, NWS, GDACS)
-│       ├── cli.py                  # CLI interface for testing
+│   ├── agent-handler/              # Main conversational agent Lambda (POST /query)
+│   │   ├── agent.py                # Strands Agent setup + model caching (LiteLLM)
+│   │   ├── handler.py              # AWS Lambda entry point (invokes TTS & tools)
+│   │   ├── prompts.py              # System prompt (scoped strictly to weather)
+│   │   ├── tools.py                # Weather tools (OWM, NWS, GDACS, Activity Advisor)
+│   │   ├── cli.py                  # CLI interface for offline terminal testing
+│   │   └── requirements.txt
+│   │
+│   ├── tts-handler/                # Text-to-speech Lambda (internal invocation)
+│   │   ├── handler.py              # Amazon Polly speech synthesis into base64 audio
+│   │   ├── conftest.py             # Pytest fixtures and test environment
+│   │   └── tests/                  # Offline unit tests
+│   │
+│   └── alert-handler/              # Scheduled proactive weather monitoring
+│       ├── handler.py              # Checks weather alerts & publishes to SNS topic
 │       └── requirements.txt
 │
 └── frontend/
     ├── pages/
-    │   ├── index.js                # Main dashboard page
+    │   ├── index.js                # Main weather dashboard page
     │   └── api/
-    │       └── alerts.js           # GDACS proxy with 5-min cache
+    │       └── alerts.js           # GDACS proxy with 5-minute cache
     ├── components/
-    │   ├── AppShell.js             # Root layout with ambient effects
-    │   ├── TopBar.js               # Search + language selector
-    │   ├── WeatherCard.js          # Current conditions display
-    │   ├── HourlyTimeline.js       # 24-hour horizontal forecast
-    │   ├── ForecastList.js         # 5-day forecast sidebar
-    │   ├── AlertBanner.js          # Weather alert notifications
-    │   ├── VoiceInput.js           # Mic + text chat bar
-    │   ├── ChatHistory.js          # Conversation bubbles
-    │   ├── AudioPlayer.js          # TTS playback with visualizer
-    │   ├── SuggestionChips.js      # Quick-start prompts
-    │   ├── SkeletonCard.js         # Loading placeholder
-    │   └── ErrorToast.js           # Error notifications
+    │   ├── AppShell.js             # Root layout with ambient lighting effects
+    │   ├── TopBar.js               # Search bar, geolocation trigger & language selector
+    │   ├── WeatherCard.js          # Current conditions & temperature display
+    │   ├── HourlyTimeline.js       # 24-hour horizontal forecast strip
+    │   ├── ForecastList.js         # 5-day daily forecast sidebar
+    │   ├── AlertBanner.js          # Weather alert pill banner (NWS / GDACS)
+    │   ├── VoiceInput.js           # Mic recording & natural language chat bar
+    │   ├── ChatHistory.js          # Interactive conversation history
+    │   ├── ResponseBubble.js       # Typewriter reveal effect for assistant responses
+    │   ├── AudioPlayer.js          # Polly TTS playback with animated visualizer
+    │   ├── LanguageBadge.js        # Active detected language indicator
+    │   ├── SuggestionChips.js      # Quick-start conversation prompt chips
+    │   ├── SkeletonCard.js         # Glassmorphic loading placeholders
+    │   └── ErrorToast.js           # Ephemeral error toast notifications
     ├── lib/
-    │   ├── api.js                  # Backend + Open-Meteo API layer
-    │   └── i18n.js                 # UI translation dictionaries
+    │   ├── api.js                  # Backend + Open-Meteo API communication layer
+    │   └── i18n.js                 # Multi-language dictionary and localized labels
     └── styles/
-        └── globals.css             # Design system + animations
+        └── globals.css             # Glassmorphism design system & animation tokens
 ```
 
 ---
