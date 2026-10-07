@@ -8,6 +8,8 @@ Welcome to the **Weather Buddy** engineering documentation portal. This reposito
 
 ```
 docs/
+├── index.md                         # Master documentation portal (You are here)
+│
 ├── architecture/
 │   ├── system-design.md             # End-to-end system topology & state machines
 │   ├── sequence-diagrams.md         # Runtime interaction flows & retry loops
@@ -27,13 +29,23 @@ docs/
 │   ├── activity-advisor-algorithms.md # Meteorological comfort index equations
 │   ├── testing-handbook.md          # Offline testing fixtures & mock strategies
 │   ├── performance-benchmarks.md    # Latency profiles & memory sizing analysis
-│   └── troubleshooting-and-faq.md   # 20+ diagnostic recipes & recovery runbooks
+│   ├── troubleshooting-and-faq.md   # 20+ diagnostic recipes & recovery runbooks
+│   ├── disaster-alert-system-gdacs.md # GDACS hazard parsing & Haversine proximity
+│   ├── audio-engineering-deepdive.md # Audio codecs, Web Audio FFT, and Polly streams
+│   ├── developer-runbook.md         # Day-to-day recipes (adding tools, languages)
+│   ├── glossary-and-meteorology.md  # Meteorological formulas & Beaufort scale
+│   └── local-mock-development-guide.md # Zero-cloud offline development & simulation
 │
 ├── i18n/
 │   └── multilingual-matrix.md       # 100-language routing table & SSML rules
 │
-└── security/
-    └── threat-model-and-hardening.md # STRIDE analysis & OWASP Top 10 for LLMs
+├── security/
+│   └── threat-model-and-hardening.md # STRIDE analysis & OWASP Top 10 for LLMs
+│
+└── adr/
+    ├── 0001-tri-lambda-architecture.md # Decoupling into 3 specialized Lambdas
+    ├── 0002-lambda-function-urls-vs-api-gateway.md # Function URLs vs 29s timeout cap
+    └── 0003-litellm-multi-provider-abstraction.md # Multi-provider LiteLLM router
 ```
 
 ---
@@ -59,7 +71,7 @@ Explore our underlying multi-lambda architecture and state management:
 
 ---
 
-## 2. API Reference & Schemas
+## 2. API Reference & Data Contracts
 
 Integrate programmatically with Weather Buddy endpoints:
 
@@ -101,34 +113,29 @@ Deploy Weather Buddy locally or to AWS Serverless production:
 
 ---
 
-## 4. Internationalization & Multilingual Matrix
+## 4. Engineering Guides & Deep Dives
 
-* 🌍 **[Multilingual Internationalization Matrix](file:///docs/i18n/multilingual-matrix.md)**
-  * Complete operational matrix covering 100 world languages.
-  * ISO-639-1 language tags and native scripts.
-  * Groq Whisper transcription confidence ratings.
-  * Amazon Polly Neural voice ID mappings.
-  * Multi-language UI dictionary definitions and SSML phonetic rules.
-
----
-
-## 5. Security & Threat Modeling
-
-* 🔒 **[Threat Modeling & Security Hardening](file:///docs/security/threat-model-and-hardening.md)**
-  * Microsoft STRIDE threat classification matrix.
-  * OWASP Top 10 for LLMs defense (Prompt Injection, Insecure Output Handling).
-  * Server-Side Request Forgery (SSRF) prevention on weather tool clients.
-  * IAM Principle of Least Privilege and secrets lifecycle.
-  * Ephemeral in-memory audio processing without persistent storage.
-
----
-
-## 6. Testing, Benchmarks & Diagnostics
-
+* 🏃 **[Activity Advisor Scoring Algorithms](file:///docs/guides/activity-advisor-algorithms.md)**
+  * Mathematical equations for Heat Index ($HI$) and Wind Chill ($WCI$).
+  * Threshold profiles for running, cycling, hiking, golfing, and water sports.
+* 🚨 **[GDACS Disaster Hazard Architecture](file:///docs/guides/disaster-alert-system-gdacs.md)**
+  * CAP XML schema parsing for tropical storms, floods, and earthquakes.
+  * Geospatial proximity matching via the spherical Haversine formula.
+* 🎵 **[Audio Engineering & Visualizer Mathematics](file:///docs/guides/audio-engineering-deepdive.md)**
+  * MediaRecorder container negotiation (`audio/webm;codecs=opus` vs `audio/mp4`).
+  * Fast Fourier Transform (FFT) 60 FPS visualizer mathematics.
+  * Base64 MP3 stream decoding into PCM hardware buffers.
+* 🛠️ **[Day-to-Day Developer Runbook](file:///docs/guides/developer-runbook.md)**
+  * Adding new meteorological tools in 5 steps with offline mocks.
+  * Adding new languages to UI translation dictionaries.
+  * Emulated container testing with SAM Local and Docker.
+* 🔬 **[Meteorological Science Handbook & Glossary](file:///docs/guides/glossary-and-meteorology.md)**
+  * Thermodynamics equations (Tetens vapor pressure, Dew Point calculation).
+  * International Beaufort Wind Scale reference (Forces 0 to 12).
+  * 30/30 convective lightning safety guidelines and metric unit conversions.
 * 🧪 **[Quality Assurance & Testing Handbook](file:///docs/guides/testing-handbook.md)**
   * Zero-credential offline test methodology.
   * Unit test mocking fixtures for Boto3, Polly, and OpenWeatherMap.
-  * Running test suites via the master `Makefile` target.
 * 📊 **[Performance Benchmarks & Memory Sizing](file:///docs/guides/performance-benchmarks.md)**
   * End-to-end latency benchmarks across Groq, EC2 Ollama, and Bedrock.
   * Lambda cold-start vs warm-start timing measurements.
@@ -136,4 +143,30 @@ Deploy Weather Buddy locally or to AWS Serverless production:
 * 🩺 **[Troubleshooting & Diagnostic Handbook](file:///docs/guides/troubleshooting-and-faq.md)**
   * 20+ categorized diagnostic recipes with symptoms, causes, and solutions.
   * CloudWatch CLI log query recipes.
-  * Frequently Asked Questions (FAQ).
+* ✈️ **[Local Mock Development Guide](file:///docs/guides/local-mock-development-guide.md)**
+  * Developing completely offline with `MOCK_MODE=true`.
+  * Simulated city fixtures and synthetic audio generation.
+
+---
+
+## 5. Architecture Decision Records (ADRs)
+
+* 🏛️ **[ADR-0001: Separation into Tri-Lambda Serverless Topology](file:///docs/adr/0001-tri-lambda-architecture.md)**
+* 🏛️ **[ADR-0002: Adoption of Lambda Function URLs over API Gateway](file:///docs/adr/0002-lambda-function-urls-vs-api-gateway.md)**
+* 🏛️ **[ADR-0003: Adoption of LiteLLM Multi-Provider Inference Abstraction](file:///docs/adr/0003-litellm-multi-provider-abstraction.md)**
+
+---
+
+## 6. Internationalization & Security
+
+* 🌍 **[Multilingual Internationalization Matrix](file:///docs/i18n/multilingual-matrix.md)**
+  * Complete operational matrix covering 100 world languages.
+  * ISO-639-1 language tags and native scripts.
+  * Groq Whisper transcription confidence ratings.
+  * Amazon Polly Neural voice ID mappings and SSML phonetic rules.
+* 🔒 **[Threat Modeling & Security Hardening](file:///docs/security/threat-model-and-hardening.md)**
+  * Microsoft STRIDE threat classification matrix.
+  * OWASP Top 10 for LLMs defense (Prompt Injection, Insecure Output Handling).
+  * Server-Side Request Forgery (SSRF) prevention on weather tool clients.
+  * IAM Principle of Least Privilege and secrets lifecycle.
+  * Ephemeral in-memory audio processing without persistent storage.
