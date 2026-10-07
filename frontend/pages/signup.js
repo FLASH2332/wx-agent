@@ -76,7 +76,7 @@ export default function SignupPage() {
       }
 
       // Signup successful — go to chat interface
-      router.push('/');
+      window.location.href = '/';
     } catch {
       setApiError('Could not connect to server. Please check your connection.');
     } finally {

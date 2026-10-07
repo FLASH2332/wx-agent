@@ -60,7 +60,7 @@ export default function LoginPage() {
       }
 
       // Login successful — redirect to existing chat interface (root route)
-      router.push('/');
+      window.location.href = '/';
     } catch {
       setApiError('Could not connect to server. Please check your connection.');
     } finally {
