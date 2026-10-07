@@ -184,19 +184,35 @@ cd wx-agent
 
 ### 2. Configure Environment Variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root (refer to [`.env.example`](file:///.env.example)):
 
 ```env
+# OpenWeatherMap API key (free tier — v2.5 current + forecast endpoints)
 OWM_API_KEY=your_openweathermap_key
-GROQ_API_KEY=your_groq_api_key
-GROQ_MODEL_ID=llama-3.3-70b-versatile
-MODEL_PROVIDER=groq
+
+# LLM provider configuration via LiteLLM (select provider using prefix)
+# Option A: Groq hosted inference (fastest)
+LLM_MODEL_ID=groq/llama-3.1-8b-instant
+LLM_BASE_URL=
+LLM_API_KEY=your_groq_api_key
+
+# Option B: Self-hosted Ollama on EC2 (OpenAI-compatible)
+# LLM_MODEL_ID=openai/qwen2.5:3b-instruct
+# LLM_BASE_URL=http://<ec2-ip>:11434/v1
+# LLM_API_KEY=ollama
+
+# AWS Region (defaults to us-east-1)
+AWS_REGION=us-east-1
 ```
 
 Create `frontend/.env.local`:
 
 ```env
+# Local development:
 NEXT_PUBLIC_API_URL=http://127.0.0.1:3001/query
+
+# Production (Lambda Function URL output from SAM deploy):
+# NEXT_PUBLIC_API_URL=https://<function-id>.lambda-url.us-east-1.on.aws
 ```
 
 ### 3. Install Backend Dependencies
@@ -345,30 +361,72 @@ This is injected into the system prompt dynamically, so you can ask *"Will it ra
 
 ## ☁️ Deployment
 
-### AWS SAM (Production)
+### AWS SAM Multi-Lambda Architecture
+
+The repository includes a top-level `Makefile` providing standardized shortcuts for building, linting, and deploying the AWS SAM stack:
 
 ```bash
-# Build
-sam build
+# 1. Validate template syntax and lint
+make validate        # runs: sam validate --lint
 
-# Deploy (guided first time)
-sam deploy --guided
+# 2. Build all three Lambdas using uv / makefile builders
+make build           # runs: sam build
+
+# 3. Interactive first-time deployment
+make deploy-guided   # runs: sam deploy --guided
+
+# 4. Subsequent deployments using saved samconfig.toml
+make deploy          # runs: sam deploy
 ```
 
-After deployment, SAM outputs your API Gateway URL. Set it in your frontend hosting platform:
+#### Key Deployment Parameters
+During `sam deploy --guided`, configure the following stack parameters:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `OwmApiKey` | *(required)* | OpenWeatherMap v2.5 API key |
+| `LlmModelId` | `groq/llama-3.1-8b-instant` | LiteLLM model identifier (e.g., `openai/qwen2.5:7b-instruct` or `groq/llama-3.1-8b-instant`) |
+| `LlmApiKey` | *(required)* | API key for LLM provider (`ollama` for self-hosted instances) |
+| `LlmBaseUrl` | `""` | Base URL for self-hosted OpenAI-compatible LLMs (e.g., `http://<ec2-ip>:11434/v1`) |
+| `AlertLocation` | `Chennai, IN` | Geographic location monitored by the daily morning alert schedule |
+| `AlertEmail` | `""` | Email address to receive proactive SNS weather warning alerts |
+
+#### Connecting the Frontend: Lambda Function URL vs. API Gateway
+SAM provisions two endpoints for the agent backend:
+- **`AgentFunctionUrl` (Recommended)**: Direct Lambda Function URL with **no 29-second timeout limit**, ensuring slow self-hosted model generation or multi-step tool calls complete reliably without connection drops.
+- **`ApiUrl`**: Standard API Gateway REST endpoint (enforces an AWS hard limit of 29 seconds).
+
+Copy the output `AgentFunctionUrl` and configure your frontend:
 
 ```env
-NEXT_PUBLIC_API_URL=https://abcdef123.execute-api.us-east-1.amazonaws.com/Prod/query
+NEXT_PUBLIC_API_URL=https://<id>.lambda-url.us-east-1.on.aws
 ```
 
-### Frontend (Vercel)
+### Frontend Deployment (Vercel)
 
 ```bash
 cd frontend
 npx vercel
 ```
 
-Set `NEXT_PUBLIC_API_URL` in the Vercel dashboard environment variables.
+In the Vercel project dashboard, set `NEXT_PUBLIC_API_URL` to your deployed Lambda Function URL.
+
+---
+
+## 🧪 Testing & Validation
+
+Run unit tests offline across both Lambda services:
+
+```bash
+# Run pytest test suites across agent-handler and tts-handler
+make test
+```
+
+Or execute directly inside each lambda directory:
+```bash
+cd lambdas/agent-handler && pytest -q
+cd lambdas/tts-handler && pytest -q
+```
 
 ---
 
