@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, Trash2 } from 'lucide-react';
+import { MessageCircle, Trash2, Volume2, VolumeX } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import TopBar from '@/components/TopBar';
 import VoiceInput from '@/components/VoiceInput';
@@ -11,11 +11,15 @@ import AlertBanner from '@/components/AlertBanner';
 import ChatHistory from '@/components/ChatHistory';
 import ErrorToast from '@/components/ErrorToast';
 import SuggestionChips from '@/components/SuggestionChips';
-import { queryAgent, fetchInstantWeather } from '@/lib/api';
+import ComparisonCard from '@/components/ComparisonCard';
+import ActivityChips from '@/components/ActivityChips';
+import { queryAgent, fetchInstantWeather, synthesizeSpeech } from '@/lib/api';
+import { playSpeech, stopSpeech } from '@/lib/speech';
 import { skyFor } from '@/lib/skyTheme';
 
-export default function Home() {
+export default function Home({ authUser, onLogout }) {
   const [appState, setAppState] = useState('idle');
+  const [userCoords, setUserCoords] = useState(null);
   
   const [weatherData, setWeatherData] = useState(null);
   const [forecastDays, setForecastDays] = useState([]);
@@ -24,6 +28,10 @@ export default function Home() {
   
   const [messages, setMessages] = useState([]);
   const [latestResponse, setLatestResponse] = useState("");
+  // Spoken replies are opt-in: each one costs a TTS call (Polly) or uses free browser voices.
+  const [speakEnabled, setSpeakEnabled] = useState(false);
+  const [uiMode, setUiMode] = useState("dashboard");
+  const [comparisonData, setComparisonData] = useState(null);
   const [streamingText, setStreamingText] = useState("");
 
   // Explicit language state (overrides auto-detection for subsequent turns)
@@ -38,6 +46,21 @@ export default function Home() {
   }, [messages, appState]);
 
   useEffect(() => {
+    try {
+      setSpeakEnabled(localStorage.getItem('wb_speak') === '1');
+    } catch (e) { /* storage unavailable */ }
+  }, []);
+
+  const toggleSpeak = () => {
+    const next = !speakEnabled;
+    setSpeakEnabled(next);
+    if (!next) stopSpeech();
+    try {
+      localStorage.setItem('wb_speak', next ? '1' : '0');
+    } catch (e) { /* storage unavailable */ }
+  };
+
+  useEffect(() => {
     // On initial load, try to get the user's location to populate the dashboard
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -45,6 +68,7 @@ export default function Home() {
           try {
             setAppState('processing');
             const { latitude, longitude } = position.coords;
+            setUserCoords({ lat: latitude, lon: longitude });
             // Need to import fetchInstantWeatherByCoords in the file!
             const { fetchInstantWeatherByCoords } = await import('@/lib/api');
             const data = await fetchInstantWeatherByCoords(latitude, longitude);
@@ -55,10 +79,10 @@ export default function Home() {
               setForecastHourly(data.forecast_data.hourly || []);
             }
             if (data.alerts) setAlerts(data.alerts);
-            
-            setAppState('result');
-          } catch (e) {
-            console.error("Geolocation fetch failed:", e);
+            setAppState('idle');
+            setUiMode('dashboard');
+          } catch (err) {
+            console.error("Location init error:", err);
             setAppState('idle');
           }
         },
@@ -68,6 +92,26 @@ export default function Home() {
       );
     }
   }, []);
+
+  const handleLangChange = async (newLang) => {
+    setSelectedLang(newLang);
+    if (weatherData?.location) {
+      setAppState('processing');
+      try {
+        const syncData = await fetchInstantWeather(weatherData.location, newLang);
+        setWeatherData(syncData.weather_data);
+        if (syncData.forecast_data) {
+          setForecastDays(syncData.forecast_data.days || []);
+          setForecastHourly(syncData.forecast_data.hourly || []);
+        }
+        if (syncData.alerts) setAlerts(syncData.alerts);
+        setAppState('result');
+      } catch (e) {
+        console.error("Language sync failed", e);
+        setAppState('idle');
+      }
+    }
+  };
 
   const handleQuery = async (text, isSilentLocationUpdate = false, detectedLang = null) => {
     if (!text.trim()) return;
@@ -90,15 +134,33 @@ export default function Home() {
     setErrorMsg("");
     
     try {
-      // Pass existing messages to backend (Strands agent(text) appends the user turn automatically)
+      // Send the visible text history; the server keeps only the last few turns for the model
+      // and returns the updated text-only history (never raw tool/reasoning blocks).
       const contextLocation = weatherData?.location || null;
-      const response = await queryAgent(text, activeLang, currentMessages, contextLocation);
+      
+      const localTime = new Date().toISOString();
+      const payload = {
+        text,
+        lang: activeLang,
+        messages: currentMessages,
+        contextLocation,
+        userLat: userCoords?.lat || null,
+        userLon: userCoords?.lon || null,
+        localTime
+      };
+      
+      const response = await queryAgent(payload);
       
       setMessages(response.messages || [...currentMessages, userMsg]);
       
       if (!isSilentLocationUpdate) {
         const fullText = response.response_text || "";
         setLatestResponse(fullText);
+        setUiMode(response.ui_mode || "chat");
+        setComparisonData(response.comparison_data || null);
+        if (response.lang) {
+          setSelectedLang(response.lang);
+        }
         // Typewriter reveal — stream words into streamingText so the reply
         // appears progressively rather than popping in all at once.
         setStreamingText("");
@@ -109,13 +171,19 @@ export default function Home() {
           const snapshot = built;
           setTimeout(() => setStreamingText(snapshot), i * 35);
         }
+        if (speakEnabled && fullText) {
+          synthesizeSpeech(fullText, response.lang || activeLang)
+            .then(playSpeech)
+            .catch((e) => console.warn("Speech synthesis failed", e));
+        }
       }
       
       let newLocation = response.weather_data?.location || response.forecast_data?.location;
       
       if (newLocation) {
         try {
-          const syncData = await fetchInstantWeather(newLocation);
+          // Sync with the backend to ensure perfectly localized current & forecast data
+          const syncData = await fetchInstantWeather(newLocation, activeLang);
           setWeatherData(syncData.weather_data);
           if (syncData.forecast_data) {
             setForecastDays(syncData.forecast_data.days || []);
@@ -145,7 +213,7 @@ export default function Home() {
   const handleManualLocation = async (location) => {
     try {
       setAppState('processing');
-      const data = await fetchInstantWeather(location);
+      const data = await fetchInstantWeather(location, selectedLang);
       
       setWeatherData(data.weather_data);
       if (data.forecast_data) {
@@ -163,6 +231,7 @@ export default function Home() {
   };
 
   const handleClearChat = () => {
+    stopSpeech();
     setMessages([]);
     setLatestResponse("");
     setStreamingText("");
@@ -170,7 +239,7 @@ export default function Home() {
 
   const dock = (
     <div className="max-w-3xl mx-auto w-full px-4 pt-3 pb-4">
-      <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} appState={appState} currentLang={selectedLang} />
+      <VoiceInput onTranscript={(text, lang) => handleQuery(text, false, lang)} onError={setErrorMsg} appState={appState} currentLang={selectedLang} />
     </div>
   );
 
@@ -182,6 +251,16 @@ export default function Home() {
       <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/10 shrink-0">
         <MessageCircle className="w-4 h-4 text-white/60" strokeWidth={1.75} />
         <h3 className="text-sm font-medium text-white/70 flex-1">Weather Buddy</h3>
+        <button
+          onClick={toggleSpeak}
+          className={`p-1.5 rounded-lg transition-colors hover:bg-white/[0.06] ${speakEnabled ? 'text-white/80' : 'text-white/30 hover:text-white/60'}`}
+          title={speakEnabled ? "Turn off spoken replies" : "Turn on spoken replies"}
+          aria-pressed={speakEnabled}
+        >
+          {speakEnabled
+            ? <Volume2 className="w-3.5 h-3.5" strokeWidth={1.75} />
+            : <VolumeX className="w-3.5 h-3.5" strokeWidth={1.75} />}
+        </button>
         {messages.length > 0 && (
           <button
             onClick={handleClearChat}
@@ -227,35 +306,45 @@ export default function Home() {
         currentLang={selectedLang}
         onLangChange={setSelectedLang}
         onLocationSearch={handleManualLocation}
+        authUser={authUser}
+        onLogout={onLogout}
       />
 
       {/* DASHBOARD - MULTI-COLUMN LAYOUT */}
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 lg:items-stretch">
+        
+        {/* LEFT COLUMN: Main Weather or Comparison (Hidden in 'chat' mode) */}
+        {uiMode !== 'chat' && (
+          <div className="flex-1 flex flex-col gap-5 min-w-0">
+            {appState === 'processing' && !weatherData && <SkeletonCard />}
 
-        {/* LEFT COLUMN: Main Weather */}
-        <div className="flex-1 flex flex-col gap-5 min-w-0">
-          {appState === 'processing' && !weatherData && <SkeletonCard />}
+            {/* Activity Pills Above Comparison Cards */}
+            <ActivityChips onSelect={(text) => handleQuery(text, false)} />
 
-          {weatherData && (
-            <>
-              <WeatherCard weatherData={weatherData} currentLang={selectedLang} />
-              <HourlyTimeline hours={forecastHourly} currentLang={selectedLang} />
-            </>
-          )}
+            {uiMode === 'comparison' && comparisonData ? (
+              <ComparisonCard data={comparisonData} />
+            ) : (
+              weatherData && (
+                <>
+                  <WeatherCard weatherData={weatherData} currentLang={selectedLang} />
+                  <HourlyTimeline hours={forecastHourly} currentLang={selectedLang} />
+                  <ForecastList days={forecastDays} currentLang={selectedLang} />
+                </>
+              )
+            )}
 
-          {appState === 'idle' && !weatherData && (
-            <div className="flex flex-col items-center justify-center min-h-[16rem]
-              border border-dashed border-white/[0.08] rounded-[28px]
-              bg-white/[0.02] p-8">
-              <p className="text-white/35 font-medium mb-4 text-sm">Ask Weather Buddy for a forecast…</p>
-              <SuggestionChips onSelect={(text) => handleQuery(text, false)} />
-            </div>
-          )}
-        </div>
+            {appState === 'idle' && !weatherData && (
+              <div className="flex flex-col items-center justify-center min-h-[16rem]
+                border border-dashed border-white/[0.08] rounded-[28px]
+                bg-white/[0.02] p-8">
+                <p className="text-white/35 font-medium mb-4 text-sm">Waiting for location...</p>
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* RIGHT COLUMN: forecast on top, live conversation filling the rest. */}
-        <div className="w-full lg:w-96 shrink-0 flex flex-col gap-5">
-          {weatherData && <ForecastList days={forecastDays} currentLang={selectedLang} />}
+        {/* RIGHT COLUMN: Live conversation */}
+        <div className={`${uiMode === 'chat' ? 'w-full max-w-2xl mx-auto' : 'w-full lg:w-96 shrink-0'} flex flex-col gap-5 transition-all duration-300 lg:sticky lg:top-2 lg:h-[calc(100vh-8rem)]`}>
           {conversationPanel}
         </div>
       </div>

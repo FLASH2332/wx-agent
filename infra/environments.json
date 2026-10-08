@@ -1,0 +1,30 @@
+{
+  "_comment": "One entry per AWS account (the key is the environment name and also the template EnvName: lowercase, max 12 chars). 'stack' is 'agent' (Docker/ECS/API Gateway/ALB/CloudWatch, infra/container.yaml) or 'platform' (S3/SNS/EventBridge alerts, infra/platform.yaml). 'profile' is the AWS CLI profile for that account: the ONLY credentials mechanism (create it with scripts/set_lab_credentials.py). 'parameters' override template defaults. Deploy the platform first so the agent links to its buckets and topic; the agent also deploys alone.",
+  "lab-new": {
+    "description": "Agent account: Docker agent on ECS, API Gateway, ALB, CloudWatch",
+    "stack": "agent",
+    "platform": "lab-existing",
+    "profile": "wb-new",
+    "region": "us-east-1",
+    "expected_account":"057016988906" ,
+    "stack_name": "weatherbuddy-container",
+    "parameters": {
+      "EnableDiagnostics": "true",
+      "MaxCount": "2"
+    }
+  },
+  "lab-existing": {
+    "description": "Platform account: S3 buckets, SNS topics, EventBridge-scheduled weather alerts. Put its 12-digit id in expected_account once you know it (a safety check).",
+    "stack": "platform",
+    "agent": "lab-new",
+    "profile": "wb-existing",
+    "region": "us-east-1",
+    "expected_account":"330508276206",
+    "stack_name": "weatherbuddy-platform",
+    "parameters": {
+      "AlertLocation": "Chennai, IN",
+      "AlertEmail": "ashwinvaws@gmail.com",
+      "AlarmEmail": "ashwinvaws@gmail.com"
+    }
+  }
+}

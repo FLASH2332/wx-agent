@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
   Weather Buddy - voice-first multilingual weather assistant.
-  agent-handler (POST /query) + tts-handler (Polly, invoked internally).
+  agent-handler (POST /query, /transcribe, /sync, /tts; Polly is called in-process).
 
 Parameters:
   OwmApiKey:
@@ -34,6 +34,12 @@ Parameters:
     Type: String
     NoEcho: true
     Description: API key for the LLM endpoint ("ollama" for a local Ollama server).
+  SttS3Bucket:
+    Type: String
+    Default: ""
+    Description: >
+      Existing S3 bucket (same region) used as Amazon Transcribe input. Leave empty to
+      skip Transcribe and use the API speech-to-text backup only.
 
 Globals:
   Function:
@@ -47,16 +53,6 @@ Globals:
       AllowMethods: "'POST,OPTIONS'"
 
 Resources:
-  TtsFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: makefile
-    Properties:
-      CodeUri: lambdas/tts-handler/
-      Handler: handler.handler
-      Description: Synthesizes speech with Amazon Polly; invoked by the agent.
-      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
-
   AgentFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -77,7 +73,7 @@ Resources:
           LLM_MODEL_ID: !Ref LlmModelId
           LLM_BASE_URL: !Ref LlmBaseUrl
           LLM_API_KEY: !Ref LlmApiKey
-          TTS_LAMBDA_NAME: !Ref TtsFunction
+          STT_S3_BUCKET: !Ref SttS3Bucket
           # Only /tmp is writable on Lambda; point HOME there in case a library
           # tries to write a cache/config at import time.
           HOME: /tmp
@@ -101,6 +97,11 @@ Resources:
           Type: Api
           Properties:
             Path: /transcribe
+            Method: post
+        Sync:
+          Type: Api
+          Properties:
+            Path: /sync
             Method: post
 
   # ── Proactive alerting ──────────────────────────────────────────────────────
@@ -150,8 +151,6 @@ Outputs:
     Value: !GetAtt AgentFunctionUrl.FunctionUrl
   AgentFunctionName:
     Value: !Ref AgentFunction
-  TtsFunctionName:
-    Value: !Ref TtsFunction
   AlertTopicArn:
     Description: SNS topic for weather alert notifications.
     Value: !Ref AlertTopic

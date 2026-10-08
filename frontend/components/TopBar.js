@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Globe } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Globe, LogOut, User } from 'lucide-react';
 import { getTranslation } from '../lib/i18n';
 
 const GREETINGS = {
@@ -20,7 +20,7 @@ const LANG_OPTIONS = [
   { code: 'ta', label: 'தமிழ்' }
 ];
 
-export default function TopBar({ currentLang, onLangChange, onLocationSearch }) {
+export default function TopBar({ currentLang, onLangChange, onLocationSearch, authUser, onLogout }) {
   const [searchInput, setSearchInput] = useState('');
   const greeting = GREETINGS[currentLang] || GREETINGS['en'];
   
@@ -80,6 +80,29 @@ export default function TopBar({ currentLang, onLangChange, onLocationSearch }) 
             ))}
           </select>
         </div>
+
+        {/* User info + logout — only shown when authenticated */}
+        {authUser && (
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 bg-black/20 border border-white/[0.06] rounded-[14px] px-3 py-2">
+              <User className="w-3.5 h-3.5 text-white/50" strokeWidth={1.75} />
+              <span className="text-sm text-white/75 font-medium max-w-[100px] truncate">
+                {authUser.name}
+              </span>
+            </div>
+            <button
+              id="topbar-logout"
+              onClick={onLogout}
+              title="Log out"
+              className="flex items-center justify-center w-9 h-9 bg-black/20 border border-white/[0.06] rounded-[14px]
+                text-white/40 hover:text-white/75 hover:bg-black/30 hover:border-white/10
+                transition-all duration-150"
+              aria-label="Log out"
+            >
+              <LogOut className="w-4 h-4" strokeWidth={1.75} />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

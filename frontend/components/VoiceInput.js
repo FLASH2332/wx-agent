@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Send, Square } from 'lucide-react';
+import { Mic, Square, Send } from 'lucide-react';
+import SuggestionChips from './SuggestionChips';
+import { transcribeAudio } from '@/lib/api';
 
-export default function VoiceInput({ onTranscript, appState }) {
+export default function VoiceInput({ onTranscript, onError, appState }) {
   const [isSupported, setIsSupported] = useState(true);
   const [isListening, setIsListening] = useState(false);
-  const [textInput, setTextInput] = useState("");
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [textInput, setTextInput] = useState("");
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -58,34 +60,26 @@ export default function VoiceInput({ onTranscript, appState }) {
     }
   };
 
+  const blobToBase64 = (blob) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
   const handleTranscription = async (audioBlob) => {
     setIsTranscribing(true);
     try {
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
-      reader.onloadend = async () => {
-        const base64Audio = reader.result.split(',')[1];
-        
-        const API_URL = process.env.NEXT_PUBLIC_API_URL;
-        const baseUrl = API_URL.replace('/query', '');
-        const res = await fetch(`${baseUrl}/transcribe`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audio_b64: base64Audio })
-        });
-        
-        if (res.ok) {
-          const data = await res.json();
-          if (data.text) {
-             onTranscript(data.text.trim(), data.language);
-          }
-        } else {
-          console.error("Transcription failed", await res.text());
-        }
-        setIsTranscribing(false);
-      };
+      const base64Audio = await blobToBase64(audioBlob);
+      const data = await transcribeAudio(base64Audio, audioBlob.type || 'audio/webm');
+      if (data.text) {
+        onTranscript(data.text, data.language || "en");
+      }
     } catch (err) {
-      console.error("Transcription error:", err);
+      console.error("Transcription failed:", err);
+      if (onError) onError(err.message || "Transcription failed.");
+    } finally {
       setIsTranscribing(false);
     }
   };
@@ -93,7 +87,7 @@ export default function VoiceInput({ onTranscript, appState }) {
   const handleTextSubmit = (e) => {
     e.preventDefault();
     if (textInput.trim()) {
-      onTranscript(textInput.trim());
+      onTranscript(textInput.trim(), null);
       setTextInput("");
     }
   };
@@ -101,82 +95,80 @@ export default function VoiceInput({ onTranscript, appState }) {
   const isProcessing = appState === 'processing';
 
   return (
-    <div className="w-full flex flex-col items-center mt-4 mb-2 pb-4">
-      {/* Transcribing indicator */}
-      <div className="h-5 mb-2 text-center">
-        {isTranscribing && (
-          <span className="text-white/50 italic text-xs font-medium tracking-wide animate-pulse">
-            Transcribing…
-          </span>
-        )}
-      </div>
+    <div className="flex flex-col items-center gap-3 w-full pb-4">
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes waveform {
+          0%, 100% { transform: scaleY(1); }
+          50% { transform: scaleY(0.4); }
+        }
+        .animate-waveform {
+          animation: waveform 0.8s ease-in-out infinite;
+          transform-origin: center;
+        }
+      `}} />
 
-      <div className="relative flex justify-center items-center w-full max-w-2xl">
-        
-        {/* Chat bar — outer radius 20px */}
-        <form 
-          onSubmit={handleTextSubmit} 
-          className={`flex w-full items-center bg-slate-900/90 
-            transition-[border-color,box-shadow] duration-200
-            rounded-[20px] pl-5 pr-2 py-2
-            shadow-[0_2px_6px_rgba(0,0,0,0.2),0_8px_24px_rgba(0,0,0,0.15)]
-            ${isListening 
-              ? 'border border-red-500/40 shadow-[0_0_0_3px_rgba(239,68,68,0.12),0_2px_6px_rgba(0,0,0,0.2)]' 
-              : 'border border-slate-700/60 hover:border-slate-600/80 focus-within:border-blue-500/40 focus-within:shadow-[0_0_0_3px_rgba(59,130,246,0.12),0_2px_6px_rgba(0,0,0,0.2)]'}
-          `}
-        >
-          <input 
-            type="text" 
-            value={textInput}
-            onChange={(e) => setTextInput(e.target.value)}
-            disabled={isProcessing || isListening}
-            placeholder={isSupported ? "Ask Weather Buddy…" : "Type your query…"}
-            className="w-full bg-transparent text-white text-base outline-none 
-              placeholder:text-slate-500/80 disabled:opacity-40
-              transition-opacity duration-150"
-          />
-          
-          <div className="flex items-center gap-1 pl-2">
-            {/* Send — hit area ≥44px */}
-            <button 
-              type="submit" 
-              disabled={!textInput.trim() || isProcessing || isListening}
-              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center
-                text-slate-400 hover:text-white disabled:opacity-20 
-                transition-[color,opacity] duration-150 press-scale"
-              aria-label="Send message"
-            >
-              <Send className="w-[18px] h-[18px]" strokeWidth={1.5} />
-            </button>
-            
-            {/* Mic — inner radius 12px (outer 20px - padding 8px) */}
-            {isSupported && (
-              <button
-                type="button"
-                onClick={toggleListen}
-                disabled={isProcessing}
-                className={`relative z-10 w-11 h-11 rounded-[12px] flex items-center justify-center
-                  transition-[background-color,transform,box-shadow] duration-200 press-scale
-                  ${isProcessing 
-                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
-                    : isListening 
-                      ? 'bg-red-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.4)]' 
-                      : 'bg-blue-600 hover:bg-blue-500 text-white'}
-                `}
-                aria-label={isListening ? "Stop listening" : "Start voice input"}
-              >
-                {isProcessing || isTranscribing ? (
-                  <div className="w-[18px] h-[18px] border-2 border-white/25 border-t-white rounded-full animate-spin"></div>
-                ) : isListening ? (
-                  <Square className="w-[18px] h-[18px] fill-current" strokeWidth={1.5} />
-                ) : (
-                  <Mic className="w-[18px] h-[18px]" strokeWidth={1.5} />
-                )}
-              </button>
-            )}
+      {/* Suggestion Chips */}
+      <SuggestionChips onSelect={(text) => onTranscript(text, null)} />
+
+      {/* Unified input bar: text + mic + send */}
+      <form onSubmit={handleTextSubmit} className="w-full max-w-lg relative flex items-center">
+        <input
+          type="text"
+          value={isListening ? "Listening…" : isTranscribing ? "Transcribing…" : textInput}
+          onChange={(e) => setTextInput(e.target.value)}
+          disabled={isProcessing || isListening || isTranscribing}
+          placeholder="Type a message or tap the mic…"
+          className="w-full bg-[#111] border border-white/10 rounded-full pl-5 pr-24 py-3.5
+            text-white text-sm outline-none placeholder:text-white/30
+            focus:border-white/20 transition-colors"
+        />
+
+        {/* Waveform inside bar — visible only while listening */}
+        {isListening && (
+          <div className="absolute right-16 flex items-center gap-0.5 h-4">
+            {[...Array(5)].map((_, i) => (
+              <div
+                key={i}
+                className="w-0.5 bg-blue-400 rounded-full animate-waveform"
+                style={{ animationDelay: `${i * 0.12}s`, height: `${[6,10,14,10,6][i]}px` }}
+              />
+            ))}
           </div>
-        </form>
-      </div>
+        )}
+
+        {/* Mic button */}
+        {isSupported && (
+          <button
+            type="button"
+            onClick={toggleListen}
+            disabled={isProcessing}
+            className={`absolute right-11 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-all
+              ${isListening
+                ? 'text-red-400 hover:text-red-300'
+                : isTranscribing
+                  ? 'text-white/20 cursor-not-allowed'
+                  : 'text-white/40 hover:text-white'}`}
+            aria-label={isListening ? "Stop recording" : "Start voice input"}
+          >
+            {isTranscribing ? (
+              <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+            ) : isListening ? (
+              <Square size={16} className="fill-current" />
+            ) : (
+              <Mic size={16} />
+            )}
+          </button>
+        )}
+
+        {/* Send button */}
+        <button
+          type="submit"
+          disabled={!textInput.trim() || isProcessing || isListening}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-white/40 hover:text-white disabled:opacity-30 transition-colors"
+        >
+          <Send size={18} />
+        </button>
+      </form>
     </div>
   );
 }

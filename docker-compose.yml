@@ -1,0 +1,16 @@
+# Run the agent container locally, exactly as ECS will run it:
+#   docker compose up --build        ->  http://127.0.0.1:3001
+# Settings come from the repo-root .env (it is NOT baked into the image).
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: agent_service/Dockerfile
+    image: weatherbuddy-agent:local
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8080"
+    ports:
+      - "127.0.0.1:3001:8080"
+    restart: unless-stopped

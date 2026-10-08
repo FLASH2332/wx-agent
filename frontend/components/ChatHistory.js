@@ -10,7 +10,7 @@ export default function ChatHistory({ messages = [], currentLang = "en", streami
   }
 
   return (
-    <div className="flex flex-col gap-3 mt-4 mb-3 overflow-y-auto max-h-64 pr-2 hide-scrollbar" role="log" aria-live="polite">
+    <div className="flex flex-col gap-4 mt-4 mb-3" role="log" aria-live="polite">
       {messages.map((msg, idx) => {
         const isUser = msg.role === 'user';
 

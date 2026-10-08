@@ -1,0 +1,267 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Weather Buddy platform stack (the "existing" Learner Lab account): the S3 buckets, the SNS topics and the
+  EventBridge-scheduled weather-alert Lambda. It holds no always-on compute. The agent stack (infra/container.yaml)
+  in the other account uses these buckets and the alarm topic through the resource policies defined here.
+  Deploy this stack FIRST, with the other account's id in AgentAccountId. Reuses the pre-existing LabRole.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: lab-existing
+    AllowedPattern: "^[a-z0-9-]{2,12}$"
+    Description: Short lowercase name used in resource names.
+  RoleName:
+    Type: String
+    Default: LabRole
+    Description: Existing IAM role used by the alert Lambda.
+  AgentAccountId:
+    Type: String
+    AllowedPattern: "^[0-9]{12}$"
+    Description: 12-digit id of the account that runs the agent (the lab-new account). Resource policies below let it use these resources.
+  OwmApiKey:
+    Type: String
+    NoEcho: true
+    Description: OpenWeatherMap key for the daily alert Lambda.
+  AlertLocation:
+    Type: String
+    Default: "Chennai, IN"
+    Description: Location the daily alert Lambda checks.
+  AlertSchedule:
+    Type: String
+    Default: "cron(30 1 * * ? *)"
+    Description: EventBridge schedule for the alert check (default 01:30 UTC = 07:00 IST).
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Email for weather alerts (needs a confirmation click). Empty = no subscriber.
+  AlarmEmail:
+    Type: String
+    Default: ""
+    Description: Email for infrastructure alarms coming from the agent account (needs a confirmation click).
+  LogArchiveDays:
+    Type: Number
+    Default: 90
+    Description: Days to keep archived logs.
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
+
+# ELB log-delivery principals (ALB access logs). Learner Lab regions only; add yours if needed.
+Mappings:
+  ElbLogAccount:
+    us-east-1: {AccountId: "127311923021"}
+    us-east-2: {AccountId: "033677994240"}
+    us-west-1: {AccountId: "027434742980"}
+    us-west-2: {AccountId: "797873946194"}
+
+Resources:
+  # ------------------------------------------------------------------ S3
+  LogsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "wb-${EnvName}-logs-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-archived-logs
+            Status: Enabled
+            ExpirationInDays: !Ref LogArchiveDays
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 2}
+
+  LogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LogsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AgentAlbAccessLogs
+            Effect: Allow
+            Principal:
+              AWS: !Sub
+                - "arn:${AWS::Partition}:iam::${ElbAccount}:root"
+                - ElbAccount: !FindInMap [ElbLogAccount, !Ref "AWS::Region", AccountId]
+            Action: s3:PutObject
+            Resource: !Sub "${LogsBucket.Arn}/alb/AWSLogs/${AgentAccountId}/*"
+          - Sid: AgentCloudWatchLogsExportAcl
+            Effect: Allow
+            Principal: {Service: !Sub "logs.${AWS::Region}.amazonaws.com"}
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt LogsBucket.Arn
+            Condition:
+              StringEquals: {"aws:SourceAccount": !Ref AgentAccountId}
+          - Sid: AgentCloudWatchLogsExportPut
+            Effect: Allow
+            Principal: {Service: !Sub "logs.${AWS::Region}.amazonaws.com"}
+            Action: s3:PutObject
+            Resource: !Sub "${LogsBucket.Arn}/exports/*"
+            Condition:
+              StringEquals:
+                "s3:x-amz-acl": bucket-owner-full-control
+                "aws:SourceAccount": !Ref AgentAccountId
+          - Sid: AgentAccountMayListLogsForDiagnostics
+            Effect: Allow
+            Principal: {AWS: !Sub "arn:${AWS::Partition}:iam::${AgentAccountId}:root"}
+            Action: s3:ListBucket
+            Resource: !GetAtt LogsBucket.Arn
+            Condition:
+              StringLike: {"s3:prefix": ["alb/*", "exports/*"]}
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt LogsBucket.Arn, !Sub "${LogsBucket.Arn}/*"]
+            Condition:
+              Bool: {"aws:SecureTransport": "false"}
+
+  SttBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Sub "wb-${EnvName}-stt-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-stt-input
+            Status: Enabled
+            Prefix: stt-input/
+            ExpirationInDays: 1
+
+  SttBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SttBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AgentAccountSpeechInput
+            Effect: Allow
+            Principal: {AWS: !Sub "arn:${AWS::Partition}:iam::${AgentAccountId}:root"}
+            Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
+            Resource: !Sub "${SttBucket.Arn}/stt-input/*"
+          - Sid: AgentAccountMayCheckTheBucket
+            Effect: Allow
+            Principal: {AWS: !Sub "arn:${AWS::Partition}:iam::${AgentAccountId}:root"}
+            Action: s3:ListBucket
+            Resource: !GetAtt SttBucket.Arn
+            Condition:
+              StringLike: {"s3:prefix": ["stt-input/*", "stt-input/"]}
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt SttBucket.Arn, !Sub "${SttBucket.Arn}/*"]
+            Condition:
+              Bool: {"aws:SecureTransport": "false"}
+
+  # ------------------------------------------------------------------ SNS
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "wb-${EnvName}-weather-alerts"
+      Subscription:
+        - !If
+          - HasAlertEmail
+          - {Protocol: email, Endpoint: !Ref AlertEmail}
+          - !Ref "AWS::NoValue"
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "wb-${EnvName}-infra-alarms"
+      Subscription:
+        - !If
+          - HasAlarmEmail
+          - {Protocol: email, Endpoint: !Ref AlarmEmail}
+          - !Ref "AWS::NoValue"
+
+  AlarmTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlarmTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: OwnerAccount
+            Effect: Allow
+            Principal: {AWS: "*"}
+            Action: ["SNS:GetTopicAttributes", "SNS:SetTopicAttributes", "SNS:AddPermission", "SNS:RemovePermission",
+                     "SNS:DeleteTopic", "SNS:Subscribe", "SNS:ListSubscriptionsByTopic", "SNS:Publish"]
+            Resource: !Ref AlarmTopic
+            Condition:
+              StringEquals: {"AWS:SourceOwner": !Ref "AWS::AccountId"}
+          - Sid: AgentAccountCloudWatchAlarms
+            Effect: Allow
+            Principal: {Service: cloudwatch.amazonaws.com}
+            Action: sns:Publish
+            Resource: !Ref AlarmTopic
+            Condition:
+              StringEquals: {"aws:SourceAccount": !Ref AgentAccountId}
+              ArnLike: {"aws:SourceArn": !Sub "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AgentAccountId}:alarm:*"}
+          - Sid: AgentAccountPublish
+            Effect: Allow
+            Principal: {AWS: !Sub "arn:${AWS::Partition}:iam::${AgentAccountId}:root"}
+            Action: sns:Publish
+            Resource: !Ref AlarmTopic
+
+  # ------------------------------------------------------------------ EventBridge -> Lambda -> SNS (daily weather alerts)
+  AlertFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Checks active weather alerts for ALERT_LOCATION and publishes them to the alert topic.
+      CodeUri: ../lambdas/alert-handler/
+      Handler: handler.handler
+      Runtime: python3.12
+      Timeout: 30
+      MemorySize: 128
+      Role: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RoleName}"
+      Environment:
+        Variables:
+          OWM_API_KEY: !Ref OwmApiKey
+          ALERT_LOCATION: !Ref AlertLocation
+          SNS_TOPIC_ARN: !Ref AlertTopic
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref AlertSchedule
+            Description: Daily weather alert check
+            Enabled: true
+
+Outputs:
+  AgentAccountId:
+    Description: The agent account these resources are shared with.
+    Value: !Ref AgentAccountId
+  LogsBucketName:
+    Description: Put this in the agent stack as ExternalLogsBucketName (deploy.py does it).
+    Value: !Ref LogsBucket
+  SttBucketName:
+    Description: Agent stack parameter ExternalSttBucketName.
+    Value: !Ref SttBucket
+  AlarmTopicArn:
+    Description: Agent stack parameter ExternalAlarmTopicArn (its CloudWatch alarms notify this topic).
+    Value: !Ref AlarmTopic
+  AlertTopicArn:
+    Description: Weather alert topic (published by the alert Lambda).
+    Value: !Ref AlertTopic
+  AlertFunctionName:
+    Value: !Ref AlertFunction

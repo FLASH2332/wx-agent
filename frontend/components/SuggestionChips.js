@@ -2,10 +2,9 @@ import React from 'react';
 
 export default function SuggestionChips({ onSelect }) {
   const SUGGESTIONS = [
-    "Weather in my city",
-    "5-day forecast for Tokyo",
-    "Can I go hiking tomorrow?",
-    "Any storm alerts in Florida?"
+    "Will it rain today?",
+    "Compare Goa and Coorg",
+    "Is it good for cycling?"
   ];
 
   return (
@@ -14,10 +13,10 @@ export default function SuggestionChips({ onSelect }) {
         <button
           key={idx}
           onClick={() => onSelect(text)}
-          className="text-xs lg:text-sm font-medium text-white/60 
-            bg-white/[0.03] hover:bg-white/[0.07] 
-            border border-white/[0.06] hover:border-white/[0.12]
-            rounded-full px-4 py-2 
+          className="text-sm font-medium text-white/60 
+            bg-[#1a1a1a] hover:bg-[#252525] 
+            border border-white/5 hover:border-white/10
+            rounded-full px-5 py-2.5
             transition-[background-color,border-color,transform] duration-150 
             press-scale"
         >

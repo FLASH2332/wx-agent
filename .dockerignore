@@ -1,0 +1,26 @@
+# Secrets and local state must never enter the image.
+.env
+.env.*
+**/.env
+**/.env.local
+.aws-sam
+.cache
+.git
+.claude
+.idea
+.vscode
+
+# Not needed by the agent container.
+venv
+**/node_modules
+frontend
+lambdas
+docs
+infra
+scripts
+**/__pycache__
+**/.pytest_cache
+*.md
+template.yaml
+Makefile
+pytest.ini

@@ -1,150 +1,59 @@
-"""agent-handler Lambda: the POST /query entrypoint.
+"""AWS Lambda adapter. All behaviour lives in `agent_service`; this only maps the
+Lambda event (API Gateway REST or Function URL) to a service call and back.
 
-Flow per request:
-  1. Extract the detected language from the request body.
-  2. Run the Strands agent natively in that language (using Groq Llama 3).
-  3. Synthesize speech by invoking tts-handler via boto3 (never HTTP).
-  4. Return response_text, audio_b64, weather_data, lang, and updated messages.
+CORS is intentionally not set here: the Function URL / API Gateway configuration in
+template.yaml adds it (setting it in both places produces duplicate headers).
 """
 
+import base64
 import json
 import os
-import urllib.request
-import boto3
+import sys
 
-from agent import latest_weather_data, latest_forecast_data, run_agent
-from tools import LocationNotFoundError
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Deployed: agent_service sits next to this file. Local checkout: it is in the repo root.
+for _path in (_HERE, os.path.abspath(os.path.join(_HERE, "..", ".."))):
+    if _path not in sys.path:
+        sys.path.append(_path)
 
-AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
-TTS_LAMBDA_NAME = os.environ["TTS_LAMBDA_NAME"]
+from agent_service import service  # noqa: E402
 
-# AWS clients initialised at module level (avoids re-init on warm invocations).
-lambda_client = boto3.client("lambda", region_name=AWS_REGION)
-
-CORS_HEADERS = {
-    "Content-Type": "application/json",
-}
+_JSON = {"Content-Type": "application/json"}
 
 
-def _response(status, body):
-    return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body)}
+def _reply(status, body):
+    return {"statusCode": status, "headers": _JSON, "body": json.dumps(body)}
 
 
-def _parse_body(event):
-    body = event.get("body") if isinstance(event, dict) else None
-    if body is None:
-        # Direct invoke / already-parsed payload.
-        return event if isinstance(event, dict) else {}
-    if isinstance(body, (dict, list)):
-        return body
-    # Lambda Function URL sets isBase64Encoded=True when the body is b64-encoded.
-    if event.get("isBase64Encoded") and isinstance(body, str):
-        import base64
-        body = base64.b64decode(body).decode("utf-8")
-    return json.loads(body)
-
-
-
-
-
-def _synthesize(text, lang):
-    """Invoke tts-handler and return its audio_b64 (empty string on failure)."""
-    invoke = lambda_client.invoke(
-        FunctionName=TTS_LAMBDA_NAME,
-        InvocationType="RequestResponse",
-        Payload=json.dumps({"text": text, "lang": lang}).encode("utf-8"),
-    )
-    payload = json.loads(invoke["Payload"].read().decode("utf-8"))
-    return payload.get("audio_b64", "")
+def _body(event):
+    raw = event.get("body")
+    if raw is None:
+        return {}
+    if isinstance(raw, (dict, list)):
+        return raw
+    if event.get("isBase64Encoded"):
+        raw = base64.b64decode(raw).decode("utf-8")
+    return json.loads(raw)
 
 
 def handler(event, context=None):
-    # rawPath is set by Lambda Function URL; path is set by API Gateway REST.
-    path = event.get("rawPath") or event.get("path", "")
-    
-    # ---------------------------------------------------------
-    # Route: /transcribe
-    # ---------------------------------------------------------
-    if path.endswith("/transcribe"):
-        try:
-            body = _parse_body(event)
-            audio_b64 = body.get("audio_b64")
-            if not audio_b64:
-                return _response(400, {"error": "Missing audio_b64"})
-                
-            import base64
-            from email.message import Message
-            
-            # Setup multipart form data for Groq Whisper
-            boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
-            body_bytes = (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="file"; filename="audio.webm"\r\n'
-                f"Content-Type: audio/webm\r\n\r\n"
-            ).encode("utf-8")
-            body_bytes += base64.b64decode(audio_b64)
-            body_bytes += f"\r\n--{boundary}\r\n".encode("utf-8")
-            body_bytes += (
-                f'Content-Disposition: form-data; name="model"\r\n\r\n'
-                f"whisper-large-v3\r\n"
-                f"--{boundary}--\r\n"
-            ).encode("utf-8")
-            
-            req = urllib.request.Request(
-                "https://api.groq.com/openai/v1/audio/transcriptions",
-                data=body_bytes,
-                headers={
-                    "Authorization": f"Bearer {os.environ.get('GROQ_API_KEY')}",
-                    "Content-Type": f"multipart/form-data; boundary={boundary}",
-                    "User-Agent": "WeatherBuddy/1.0",
-                },
-                method="POST"
-            )
-            with urllib.request.urlopen(req) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-                
-            # Fallback to language routing if supported by whisper response or just return text
-            return _response(200, {
-                "text": resp_data.get("text", ""),
-                "language": resp_data.get("language", "en")
-            })
-        except Exception as e:
-            return _response(500, {"error": str(e)})
+    # rawPath: Function URL; path: API Gateway REST.
+    path = (event.get("rawPath") or event.get("path") or "").rstrip("/")
+    method = (event.get("requestContext", {}).get("http", {}).get("method") or event.get("httpMethod") or "POST").upper()
 
-    # ---------------------------------------------------------
-    # Route: /query (or default)
-    # ---------------------------------------------------------
+    if method == "GET" and path.endswith("/health"):
+        return _reply(*service.handle_health())
     try:
-        body = _parse_body(event)
-    except (ValueError, TypeError):
-        return _response(400, {"error": "Invalid JSON body"})
+        body = _body(event)
+    except (ValueError, UnicodeDecodeError):
+        return _reply(400, {"error": "Invalid JSON body", "code": "invalid_json"})
 
-    text = (body.get("text") or "").strip()
-    if not text:
-        return _response(400, {"error": "Missing 'text' in request"})
-    messages = body.get("messages") or []
-    user_lang = body.get("lang") or "en"
-    context_location = body.get("contextLocation")
-
-    try:
-        final_text, updated_messages = run_agent(text, messages, user_lang=user_lang, context_location=context_location)
-
-        audio_b64 = ""  # TTS disabled; call _synthesize(final_text, user_lang) to re-enable
-        weather_data = latest_weather_data(updated_messages)
-        forecast_data = latest_forecast_data(updated_messages)
-
-        return _response(
-            200,
-            {
-                "response_text": final_text,
-                "audio_b64": audio_b64,
-                "weather_data": weather_data,
-                "forecast_data": forecast_data,
-                "lang": user_lang,
-                "messages": updated_messages,
-            },
-        )
-    except LocationNotFoundError:
-        return _response(400, {"error": "Location not found"})
-    except Exception as exc:  # noqa: BLE001 - never leak an uncaught exception
-        return _response(500, {"error": str(exc)})
+    routes = {
+        "/transcribe": service.handle_transcribe,
+        "/sync": service.handle_sync,
+        "/tts": service.handle_tts,
+    }
+    for suffix, fn in routes.items():
+        if path.endswith(suffix):
+            return _reply(*fn(body))
+    return _reply(*service.handle_query(body))
