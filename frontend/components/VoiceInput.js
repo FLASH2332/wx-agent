@@ -95,7 +95,7 @@ export default function VoiceInput({ onTranscript, onError, appState }) {
   const isProcessing = appState === 'processing';
 
   return (
-    <div className="flex flex-col items-center gap-6 w-full pt-8 pb-4">
+    <div className="flex flex-col items-center gap-3 w-full pb-4">
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes waveform {
           0%, 100% { transform: scaleY(1); }
@@ -106,72 +106,69 @@ export default function VoiceInput({ onTranscript, onError, appState }) {
           transform-origin: center;
         }
       `}} />
-      
-      {/* Waveform Visualization (Static/Animated) */}
-      <div className="flex items-center gap-1.5 h-6">
-        {[...Array(6)].map((_, i) => (
-          <div 
-            key={i} 
-            className={`w-1.5 bg-blue-500 rounded-full transition-all duration-300
-              ${isListening ? 'animate-waveform bg-blue-400' : 'h-3 opacity-30 bg-blue-500/50'}`}
-            style={isListening ? { animationDelay: `${i * 0.15}s`, height: `${Math.random() * 16 + 8}px` } : {}}
-          />
-        ))}
-      </div>
 
-      {/* Main Mic Button */}
-      <div className="flex flex-col items-center gap-3">
-        <button
-          type="button"
-          onClick={toggleListen}
-          disabled={isProcessing || !isSupported}
-          className={`relative z-10 w-20 h-20 rounded-full flex items-center justify-center
-            transition-all duration-300 press-scale
-            ${isProcessing 
-              ? 'bg-[#1a1a1a] text-white/20 cursor-not-allowed border border-white/5' 
-              : isListening 
-                ? 'bg-red-500 text-white shadow-[0_0_32px_rgba(239,68,68,0.5)]' 
-                : 'bg-[#1349a3] hover:bg-[#1a5bcc] text-white shadow-[0_0_24px_rgba(19,73,163,0.3)]'}
-          `}
-          aria-label={isListening ? "Stop listening" : "Start voice input"}
-        >
-          {isProcessing || isTranscribing ? (
-            <div className="w-8 h-8 border-3 border-white/25 border-t-white rounded-full animate-spin"></div>
-          ) : isListening ? (
-            <Square className="w-8 h-8 fill-current" strokeWidth={2} />
-          ) : (
-            <Mic className="w-8 h-8" strokeWidth={2} />
-          )}
-        </button>
-        <span className="text-sm font-medium text-white/50">
-          {isListening ? "Listening..." : "Tap to speak"}
-        </span>
-      </div>
-
-      {/* Suggestion Chips Below */}
+      {/* Suggestion Chips */}
       <SuggestionChips onSelect={(text) => onTranscript(text, null)} />
 
-      {/* Text Fallback */}
-      <form onSubmit={handleTextSubmit} className="w-full max-w-lg mt-4 relative">
-        <input 
-          type="text" 
-          value={textInput}
+      {/* Unified input bar: text + mic + send */}
+      <form onSubmit={handleTextSubmit} className="w-full max-w-lg relative flex items-center">
+        <input
+          type="text"
+          value={isListening ? "Listening…" : isTranscribing ? "Transcribing…" : textInput}
           onChange={(e) => setTextInput(e.target.value)}
-          disabled={isProcessing || isListening}
-          placeholder="Or type a message..."
-          className="w-full bg-[#111] border border-white/10 rounded-full pl-5 pr-12 py-3.5 
-            text-white text-sm outline-none placeholder:text-white/30 
+          disabled={isProcessing || isListening || isTranscribing}
+          placeholder="Type a message or tap the mic…"
+          className="w-full bg-[#111] border border-white/10 rounded-full pl-5 pr-24 py-3.5
+            text-white text-sm outline-none placeholder:text-white/30
             focus:border-white/20 transition-colors"
         />
-        <button 
-          type="submit" 
+
+        {/* Waveform inside bar — visible only while listening */}
+        {isListening && (
+          <div className="absolute right-16 flex items-center gap-0.5 h-4">
+            {[...Array(5)].map((_, i) => (
+              <div
+                key={i}
+                className="w-0.5 bg-blue-400 rounded-full animate-waveform"
+                style={{ animationDelay: `${i * 0.12}s`, height: `${[6,10,14,10,6][i]}px` }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Mic button */}
+        {isSupported && (
+          <button
+            type="button"
+            onClick={toggleListen}
+            disabled={isProcessing}
+            className={`absolute right-11 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-all
+              ${isListening
+                ? 'text-red-400 hover:text-red-300'
+                : isTranscribing
+                  ? 'text-white/20 cursor-not-allowed'
+                  : 'text-white/40 hover:text-white'}`}
+            aria-label={isListening ? "Stop recording" : "Start voice input"}
+          >
+            {isTranscribing ? (
+              <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+            ) : isListening ? (
+              <Square size={16} className="fill-current" />
+            ) : (
+              <Mic size={16} />
+            )}
+          </button>
+        )}
+
+        {/* Send button */}
+        <button
+          type="submit"
           disabled={!textInput.trim() || isProcessing || isListening}
           className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-white/40 hover:text-white disabled:opacity-30 transition-colors"
         >
           <Send size={18} />
         </button>
       </form>
-
     </div>
   );
 }
