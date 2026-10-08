@@ -6,11 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:migrate": "node scripts/db-migrate.js",
+    "db:generate-secret": "node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\""
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie": "^2.0.1",
+    "jose": "^6.2.12",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.446.0",
     "next": "14.2.14",
+    "pg": "^8.23.1",
     "react": "^18",
     "react-dom": "^18"
   },

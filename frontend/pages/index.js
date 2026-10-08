@@ -17,7 +17,7 @@ import { queryAgent, fetchInstantWeather, synthesizeSpeech } from '@/lib/api';
 import { playSpeech, stopSpeech } from '@/lib/speech';
 import { skyFor } from '@/lib/skyTheme';
 
-export default function Home() {
+export default function Home({ authUser, onLogout }) {
   const [appState, setAppState] = useState('idle');
   const [userCoords, setUserCoords] = useState(null);
   
@@ -306,6 +306,8 @@ export default function Home() {
         currentLang={selectedLang}
         onLangChange={setSelectedLang}
         onLocationSearch={handleManualLocation}
+        authUser={authUser}
+        onLogout={onLogout}
       />
 
       {/* DASHBOARD - MULTI-COLUMN LAYOUT */}
