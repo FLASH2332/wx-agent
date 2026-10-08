@@ -9,3 +9,7 @@ AGENTS.md
 Untitled.md
 cli_audio/
 .claude
+__pycache__/
+*.pyc
+
+infra/.state/
