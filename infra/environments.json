@@ -6,7 +6,7 @@
     "platform": "lab-existing",
     "profile": "wb-new",
     "region": "us-east-1",
-    "expected_account": "057016988906",
+    "expected_account":"057016988906" ,
     "stack_name": "weatherbuddy-container",
     "parameters": {
       "EnableDiagnostics": "true",
@@ -19,7 +19,7 @@
     "agent": "lab-new",
     "profile": "wb-existing",
     "region": "us-east-1",
-    "expected_account": null,
+    "expected_account":"330508276206",
     "stack_name": "weatherbuddy-platform",
     "parameters": {
       "AlertLocation": "Chennai, IN",
